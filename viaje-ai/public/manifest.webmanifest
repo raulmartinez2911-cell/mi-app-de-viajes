@@ -1,0 +1,11 @@
+{
+  "name": "ruta / AI",
+  "short_name": "ruta AI",
+  "description": "Itinerarios de viaje personalizados con Gemini",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f8f6",
+  "theme_color": "#0d5263",
+  "orientation": "portrait-primary",
+  "lang": "es"
+}
