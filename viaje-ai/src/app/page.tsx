@@ -28,7 +28,29 @@ const exampleDays: Day[] = [
   { day: "Día 03", title: "Una última postal", mood: "Arquitectura y río", stops: [{ time: "08:00", activity: "Paseo monumental", place: "Torre de Belém", address: "Av. Brasília, Lisboa" }, { time: "13:30", activity: "Comida junto al río", place: "Pão Pão Queijo Queijo", address: "Rua de Belém 126, Lisboa" }, { time: "17:00", activity: "Último paseo y compras", place: "LX Factory", address: "Rua Rodrigues de Faria 103, Lisboa" }] },
 ];
 
-function dateLabel(date: string) { return date ? new Intl.DateTimeFormat("es", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${date}T12:00:00`)) : "Sin fecha"; }
+function dateLabel(date: string) {
+  if (!date) return "Sin fecha";
+  const parsed = new Date(`${date}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) return "Sin fecha";
+  return new Intl.DateTimeFormat("es-ES", { day: "2-digit", month: "2-digit", year: "numeric" }).format(parsed);
+}
+
+function getTripDays(startDate: string, endDate: string) {
+  if (!startDate || !endDate) return 3;
+  const start = new Date(`${startDate}T12:00:00`);
+  const end = new Date(`${endDate}T12:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 3;
+  return Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+}
+
+function getDayDate(startDate: string, index: number) {
+  if (!startDate) return "";
+  const start = new Date(`${startDate}T12:00:00`);
+  if (Number.isNaN(start.getTime())) return "";
+  const next = new Date(start);
+  next.setDate(start.getDate() + index);
+  return dateLabel(next.toISOString().slice(0, 10));
+}
 
 export default function Home() {
   const { data: session, status: sessionStatus } = useSession();
@@ -39,7 +61,6 @@ export default function Home() {
   const [arrival, setArrival] = useState("10:30");
   const [departure, setDeparture] = useState("18:00");
   const [hotel, setHotel] = useState("Memmo Príncipe Real");
-  const [days, setDays] = useState("3");
   const [budget, setBudget] = useState("Medio");
   const [pace, setPace] = useState("Equilibrado");
   const [selectedInterests, setSelectedInterests] = useState<string[]>(["Monumentos", "Cafeterías", "Foodies", "Museos"]);
@@ -55,6 +76,7 @@ export default function Home() {
   const [activeTrip, setActiveTrip] = useState<SavedTrip | null>(null);
   const [remainingGenerations, setRemainingGenerations] = useState<number | null>(null);
   const cities = useMemo(() => europe[country], [country]);
+  const tripDays = useMemo(() => getTripDays(startDate, endDate), [startDate, endDate]);
   const mapsKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
   useEffect(() => {
@@ -119,7 +141,7 @@ export default function Home() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/place-image?q=${encodeURIComponent(`${city}, ${country}, most famous monument landmark or famous street`)}`)
+    fetch(`/api/place-image?q=${encodeURIComponent(`${city}, ${country}, iconic monument building`)}`)
       .then((response) => response.json() as Promise<{ url?: string | null }>)
       .then((data) => { if (!cancelled) setDestinationImage(data.url || ""); })
       .catch(() => { if (!cancelled) setDestinationImage(""); });
@@ -153,7 +175,7 @@ export default function Home() {
       body: JSON.stringify({
         title: trip.title,
         destination: trip.destination,
-        duration: Number(days || 3),
+        duration: tripDays,
         content: { itinerary },
         hotel,
         country,
@@ -194,21 +216,50 @@ export default function Home() {
     }
   }
   function openTrip(trip: SavedTrip) { const nextCountry = trip.country && europe[trip.country] ? trip.country : country; setCountry(nextCountry); setCity(trip.title); setHotel(trip.hotel || ""); setSelectedInterests(trip.interests || []); setPace(trip.pace || "Equilibrado"); setNotes(trip.notes || ""); setItinerary(trip.itinerary); setActiveTrip(trip); setSavedWindow("detail"); }
-  function routePlaces(day: Day) { return day.stops.filter((stop) => stop.place && !/llegada|traslado|check-in|hotel/i.test(stop.activity)); }
+  function routePlaces(day: Day) {
+    return day.stops
+      .filter((stop) => stop.place && !/llegada|traslado|check-in|hotel/i.test(stop.activity))
+      .map((stop) => ({ ...stop, place: stop.place?.trim(), address: stop.address?.trim() }))
+      .filter((stop) => Boolean(stop.place));
+  }
   function dayMapUrl(day: Day) {
     const places = routePlaces(day);
-    const origin = encodeURIComponent(`${hotel}, ${city}, ${country}`);
-    const destination = encodeURIComponent(`${places[places.length - 1]?.place || city}, ${places[places.length - 1]?.address || city}, ${country}`);
-    const waypoints = places.slice(0, -1).map((place) => encodeURIComponent(`${place.place}, ${place.address || city}, ${country}`)).join("|");
+    if (places.length === 0) {
+      return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${city}, ${country}`)}`;
+    }
+
+    const origin = encodeURIComponent(`${hotel || city}, ${city}, ${country}`);
+    const destination = encodeURIComponent(`${places[places.length - 1]?.place}, ${places[places.length - 1]?.address || city}, ${country}`);
+    const waypoints = places.slice(0, -1)
+      .map((place) => `${place.place}, ${place.address || city}, ${country}`)
+      .filter(Boolean)
+      .slice(0, 8)
+      .map((value) => encodeURIComponent(value))
+      .join("|");
+
     return `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}${waypoints ? `&waypoints=${waypoints}` : ""}&travelmode=walking`;
   }
   function dayMapEmbedUrl(day: Day) {
     const places = routePlaces(day);
-    const origin = encodeURIComponent(`${hotel}, ${city}, ${country}`);
-    const destination = encodeURIComponent(`${places[places.length - 1]?.place || city}, ${places[places.length - 1]?.address || city}, ${country}`);
-    const waypoints = places.slice(0, -1).map((place) => encodeURIComponent(`${place.place}, ${place.address || city}, ${country}`)).join("|");
-    if (mapsKey && !mapsKey.includes("pega_aqui")) return `https://www.google.com/maps/embed/v1/directions?key=${mapsKey}&origin=${origin}&destination=${destination}&waypoints=${waypoints}&mode=walking`;
-    return `https://www.google.com/maps?q=${destination}&output=embed`;
+    if (places.length === 0) {
+      return `https://www.google.com/maps?q=${encodeURIComponent(`${city}, ${country}`)}&output=embed`;
+    }
+
+    const origin = encodeURIComponent(`${hotel || city}, ${city}, ${country}`);
+    const destination = encodeURIComponent(`${places[places.length - 1]?.place}, ${places[places.length - 1]?.address || city}, ${country}`);
+    const waypoints = places.slice(0, -1)
+      .map((place) => `${place.place}, ${place.address || city}, ${country}`)
+      .filter(Boolean)
+      .slice(0, 8)
+      .map((value) => encodeURIComponent(value))
+      .join("|");
+
+    if (mapsKey && !mapsKey.includes("pega_aqui")) {
+      const waypointQuery = waypoints ? `&waypoints=${waypoints}` : "";
+      return `https://www.google.com/maps/embed/v1/directions?key=${mapsKey}&origin=${origin}&destination=${destination}${waypointQuery}&mode=walking`;
+    }
+
+    return `https://www.google.com/maps?q=${encodeURIComponent(`${places[0]?.place || city}, ${country}`)}&output=embed`;
   }
 
   async function createItinerary(event?: FormEvent<HTMLFormElement>) {
@@ -220,7 +271,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           destination: `${city}, ${country}`,
-          days,
+          days: String(tripDays),
           startDate,
           endDate,
           arrival,
@@ -256,7 +307,7 @@ export default function Home() {
         <label className="field"><span>Hotel base del viaje</span><input value={hotel} onChange={(event) => setHotel(event.target.value)} placeholder="Nombre o dirección del hotel" /></label>
         <div className="field-row"><label className="field"><span>Fecha de llegada</span><input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label><label className="field"><span>Fecha de salida</span><input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} /></label></div>
         <div className="field-row"><label className="field"><span>Hora de llegada</span><input type="time" value={arrival} onChange={(event) => setArrival(event.target.value)} /></label><label className="field"><span>Hora de salida</span><input type="time" value={departure} onChange={(event) => setDeparture(event.target.value)} /></label></div>
-        <div className="field-row"><label className="field"><span>Días</span><select value={days} onChange={(event) => setDays(event.target.value)}>{["2", "3", "4", "5", "7", "10"].map((value) => <option key={value}>{value} días</option>)}</select></label><label className="field"><span>Presupuesto</span><select value={budget} onChange={(event) => setBudget(event.target.value)}><option>Esencial</option><option>Medio</option><option>Sin límite</option></select></label></div>
+        <div className="field-row"><label className="field"><span>Duración</span><input value={`${tripDays} días`} readOnly /></label><label className="field"><span>Presupuesto</span><select value={budget} onChange={(event) => setBudget(event.target.value)}><option>Esencial</option><option>Medio</option><option>Sin límite</option></select></label></div>
         <div className="choice-block"><span className="field-label">Quiero recomendaciones de...</span><div className="interest-grid">{interests.map((interest) => <button type="button" className={`interest ${selectedInterests.includes(interest) ? "selected" : ""}`} key={interest} onClick={() => toggleInterest(interest)}>{interest}<span>{selectedInterests.includes(interest) ? "✓" : "+"}</span></button>)}</div></div>
         <div className="choice-block"><span className="field-label">Ritmo del viaje</span><div className="choices">{["Pausado", "Equilibrado", "Intenso"].map((option) => <button type="button" className={`choice ${pace === option ? "selected" : ""}`} key={option} onClick={() => setPace(option)}>{option}</button>)}</div></div>
         <label className="field"><span>Un detalle para hacerlo tuyo <small>opcional</small></span><textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Ej. Me encantan los mercados, viajo con mi madre..." rows={2} /></label>
@@ -267,9 +318,9 @@ export default function Home() {
         )}
         <button className="submit-button" type="submit" disabled={isLoading || sessionStatus === "loading"}>{isLoading ? "Calculando tu ruta..." : session ? "Crear mi itinerario" : "Entrar con Google para continuar"}<span>↗</span></button>{error && <p className="error-message">{error}</p>}<p className="privacy-note">✦ Diseñado con Gemini · Tus preferencias no se guardan</p>
       </form>
-      <section className="itinerary-panel"><div className="panel-heading"><div><span className="section-kicker">02 / Tu ruta</span><h2>{city}</h2><p className="route-subtitle">{dateLabel(startDate)} — {dateLabel(endDate)} · base: {hotel || "tu hotel"}</p></div><button className="icon-button" onClick={saveTrip} aria-label="Guardar itinerario">♡</button></div><p className="route-meta"><span>{days}</span><i /><span>{selectedInterests.length} intereses</span><i /><span>{pace}</span></p>
+      <section className="itinerary-panel"><div className="panel-heading"><div><span className="section-kicker">02 / Tu ruta</span><h2>{city}</h2><p className="route-subtitle">{dateLabel(startDate)} — {dateLabel(endDate)} · base: {hotel || "tu hotel"}</p></div><button className="icon-button save-button" onClick={saveTrip} aria-label="Guardar itinerario">Guardar mi viaje</button></div><p className="route-meta"><span>{tripDays} días</span><i /><span>{selectedInterests.length} intereses</span><i /><span>{pace}</span></p>
         {destinationImage && <img className="destination-photo" src={destinationImage} alt={`Lugar representativo de ${city}, ${country}`} />}
-        <div className="day-list">{itinerary.map((day, index) => <article className="day-card" key={`${day.day}-${index}`}><div className="day-marker"><span>{String(index + 1).padStart(2, "0")}</span><div /></div><div className="day-content"><div className="day-title"><div><span>{day.day}</span><h3>{day.title}</h3><p>{day.mood}</p></div><span className="day-arrow">↗</span></div><ul>{day.stops.map((stop) => <li key={`${stop.time}-${stop.activity}`}><b>{stop.time}</b> {stop.activity}{stop.place && <small className="stop-place"> · {stop.place}{stop.address ? `, ${stop.address}` : ""}</small>}</li>)}</ul><div className="day-map"><div className="day-map-heading"><div><span className="section-kicker">Ruta andando</span><strong>Desde {hotel || "tu hotel"} · {routePlaces(day).length} paradas</strong></div><a href={dayMapUrl(day)} target="_blank" rel="noreferrer">Abrir / exportar ↗</a></div><iframe title={`Ruta andando del ${day.day}`} src={dayMapEmbedUrl(day)} loading="lazy" /></div></div></article>)}</div>
+        <div className="day-list">{itinerary.map((day, index) => <article className="day-card" key={`${day.day}-${index}`}><div className="day-marker"><span>{String(index + 1).padStart(2, "0")}</span><div /></div><div className="day-content"><div className="day-title"><div><span>{day.day} · {getDayDate(startDate, index)}</span><h3>{day.title}</h3><p>{day.mood}</p></div><span className="day-arrow">↗</span></div><ul>{day.stops.map((stop) => <li key={`${stop.time}-${stop.activity}`}><b>{stop.time}</b> {stop.activity}{stop.place && <small className="stop-place"> · {stop.place}{stop.address ? `, ${stop.address}` : ""}</small>}</li>)}</ul><div className="day-map"><div className="day-map-heading"><div><span className="section-kicker">Ruta andando</span><strong>Desde {hotel || "tu hotel"} · {routePlaces(day).length} paradas</strong></div><a href={dayMapUrl(day)} target="_blank" rel="noreferrer">Abrir / exportar ↗</a></div><iframe title={`Ruta andando del ${day.day}`} src={dayMapEmbedUrl(day)} loading="lazy" /></div></div></article>)}</div>
         <div className="adjust-box"><span className="section-kicker">04 / Ajusta tu ruta</span><h3>¿Cambiarías algo?</h3><p>Escribe una petición y Gemini recalculará el itinerario manteniendo tus fechas y hotel.</p><div className="adjust-row"><input value={adjustment} onChange={(event) => setAdjustment(event.target.value)} placeholder="Ej. Cambia el museo por más vida nocturna..." /><button type="button" onClick={() => createItinerary()} disabled={!adjustment || isLoading}>Recalcular ↗</button></div></div>
         <div className="gemini-note"><span>✦</span><div><strong>Una nota de tu copiloto</strong><p>He dejado huecos para que el viaje respire. Los mejores recuerdos rara vez caben en una agenda llena.</p></div></div>
       </section>

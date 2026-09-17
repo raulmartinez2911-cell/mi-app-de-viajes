@@ -14,8 +14,16 @@ export async function GET(request: Request) {
   }
 
   try {
-    const baseQuery = query.replace(/,?\s*most famous monument landmark or famous street/i, "");
-    const searches = [`${baseQuery} famous monument`, `${baseQuery} landmark`, `${baseQuery} famous street`, baseQuery];
+    const baseQuery = query.replace(/,?\s*(most famous monument landmark or famous street|iconic building|famous monument|landmark)/i, "").trim();
+    const searches = [
+      `${baseQuery} iconic monument`,
+      `${baseQuery} famous building`,
+      `${baseQuery} cathedral landmark`,
+      `${baseQuery} famous skyline monument`,
+      `${baseQuery} landmark`,
+      `${baseQuery} famous street`,
+      baseQuery,
+    ];
     let selected: { imageinfo?: { thumburl?: string; url?: string }[] } | undefined;
     for (const search of searches) {
       const candidate = await findImage(search);
