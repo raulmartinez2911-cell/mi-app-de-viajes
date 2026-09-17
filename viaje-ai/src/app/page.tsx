@@ -1,11 +1,9 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { signIn, signOut, useSession } from "next-auth/react";
-
-type Stop = { time: string; activity: string; place?: string; address?: string };
-type Day = { day: string; title: string; mood: string; stops: Stop[] };
-type SavedTrip = { id: string; title: string; subtitle: string; destination: string; itinerary: Day[]; country?: keyof typeof europe; hotel?: string; interests?: string[]; pace?: string; notes?: string };
+import Link from "next/link";
+import { isRecord, parseSettings, replaceDay, tripDates, validateItinerary, type Day, type Landmark, type TripSettings } from "@/lib/itinerary";
 
 const europe = {
   Portugal: ["Lisboa", "Oporto", "Faro", "Braga", "Coímbra"], Spain: ["Barcelona", "Madrid", "Sevilla", "Valencia", "Málaga", "Bilbao", "Granada"],
@@ -22,311 +20,383 @@ const europe = {
   Malta: ["La Valeta", "Mdina", "Sliema"], Cyprus: ["Nicosia", "Limassol", "Pafos"], Turkey: ["Estambul", "Capadocia", "Esmirna"],
 } as const;
 const interests = ["Monumentos", "Spots fotográficos", "Cafeterías", "Foodies", "Museos", "Free tours", "Actividades", "Galerías de arte", "Vida nocturna", "Compras"];
-const exampleDays: Day[] = [
-  { day: "Día 01", title: "Llegada con calma", mood: "Aterrizar sin prisa", stops: [{ time: "10:30", activity: "Llegada y traslado al hotel", place: "Memmo Príncipe Real" }, { time: "13:00", activity: "Almuerzo en el mercado", place: "Time Out Market Lisboa", address: "Av. 24 de Julho 49, Lisboa" }, { time: "18:30", activity: "Paseo al atardecer", place: "Miradouro de Santa Catarina", address: "Rua de Santa Catarina 152, Lisboa" }] },
-  { day: "Día 02", title: "La ciudad a pie", mood: "Historia, diseño y sobremesa", stops: [{ time: "09:00", activity: "Desayuno", place: "Fabrica Coffee Roasters", address: "Rua das Portas de Santo Antão 136, Lisboa" }, { time: "11:00", activity: "Visita al museo", place: "Museu Nacional do Azulejo", address: "Rua da Madre de Deus 4, Lisboa" }, { time: "15:30", activity: "Ruta de galerías y librerías", place: "Rua Garrett, Chiado, Lisboa" }, { time: "20:00", activity: "Cena de cocina local", place: "Taberna da Rua das Flores", address: "Rua das Flores 103, Lisboa" }] },
-  { day: "Día 03", title: "Una última postal", mood: "Arquitectura y río", stops: [{ time: "08:00", activity: "Paseo monumental", place: "Torre de Belém", address: "Av. Brasília, Lisboa" }, { time: "13:30", activity: "Comida junto al río", place: "Pão Pão Queijo Queijo", address: "Rua de Belém 126, Lisboa" }, { time: "17:00", activity: "Último paseo y compras", place: "LX Factory", address: "Rua Rodrigues de Faria 103, Lisboa" }] },
-];
+const initialSettings: TripSettings = {
+  country: "Portugal", city: "Lisboa", destination: "Lisboa, Portugal",
+  startDate: "2026-10-12", endDate: "2026-10-15", arrival: "10:30", departure: "18:00",
+  hotel: "", budget: "Medio", pace: "Equilibrado", interests: ["Monumentos", "Cafeterías", "Foodies", "Museos"], notes: "",
+};
+type Screen = "home" | "planner" | "itinerary" | "trips";
+type CurrentTrip = { settings: TripSettings; itinerary: Day[]; landmark: Landmark | null; imageUrl: string; savedId?: string };
+type SavedTrip = { id: string; title: string; destination: string; subtitle: string; trip: CurrentTrip | null; raw: Record<string, unknown> };
 
 function dateLabel(date: string) {
-  if (!date) return "Sin fecha";
-  const parsed = new Date(`${date}T12:00:00`);
-  if (Number.isNaN(parsed.getTime())) return "Sin fecha";
-  return new Intl.DateTimeFormat("es-ES", { day: "2-digit", month: "2-digit", year: "numeric" }).format(parsed);
+  if (!date || !Number.isFinite(Date.parse(`${date}T12:00:00Z`))) return "Sin fecha";
+  return new Intl.DateTimeFormat("es-ES", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" }).format(new Date(`${date}T12:00:00Z`));
 }
-
-function getTripDays(startDate: string, endDate: string) {
-  if (!startDate || !endDate) return 3;
-  const start = new Date(`${startDate}T12:00:00`);
-  const end = new Date(`${endDate}T12:00:00`);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 3;
-  return Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+function parseSavedTrip(raw: Record<string, unknown>): SavedTrip {
+  let trip: CurrentTrip | null = null;
+  try {
+    const content = typeof raw.content === "string" ? JSON.parse(raw.content) : raw.content;
+    if (isRecord(content)) {
+      const settings = parseSettings(content.settings ?? { ...raw, city: raw.title });
+      const itinerary = validateItinerary(content.itinerary, settings);
+      trip = {
+        settings, itinerary, savedId: String(raw.id),
+        landmark: isRecord(content.landmark) && typeof content.landmark.name === "string" && typeof content.landmark.description === "string" ? content.landmark as Landmark : null,
+        imageUrl: typeof content.imageUrl === "string" && /^\/api\/place-image\?id=[a-f0-9]{64}$/.test(content.imageUrl) ? content.imageUrl : "",
+      };
+    }
+  } catch { /* Keep legacy documents visible; require their missing dates before replanning. */ }
+  return {
+    id: String(raw.id), title: String(raw.title || "Viaje"), destination: String(raw.destination || ""),
+    subtitle: `${dateLabel(String(raw.startDate || ""))} — ${dateLabel(String(raw.endDate || ""))}`, trip, raw,
+  };
 }
-
-function getDayDate(startDate: string, index: number) {
-  if (!startDate) return "";
-  const start = new Date(`${startDate}T12:00:00`);
-  if (Number.isNaN(start.getTime())) return "";
-  const next = new Date(start);
-  next.setDate(start.getDate() + index);
-  return dateLabel(next.toISOString().slice(0, 10));
+async function jsonRequest(url: string, init?: RequestInit) {
+  const response = await fetch(url, { cache: "no-store", ...init });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || "No se pudo completar la solicitud.");
+  return data;
 }
-
+function Heart({ filled = false }: { filled?: boolean }) {
+  return <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z" /></svg>;
+}
+function Landing({ authenticated, loading, onContinue }: { authenticated: boolean; loading?: boolean; onContinue: () => void }) {
+  return <section className="intro landing-screen" id="top">
+    <div className="eyebrow"><span /> Planificador inteligente de viajes</div>
+    <h1>Tu próxima ruta,<br /><em>bien trazada.</em></h1>
+    <p className="intro-copy">Destinos, paseos y sobremesas pensados con calma. Diseña el viaje; Gemini se ocupa de unir los puntos.</p>
+    <button className="submit-button landing-cta" onClick={onContinue} disabled={loading}>{loading ? "Cargando sesión..." : authenticated ? "Diseñar mi viaje" : "Iniciar sesión con Google"}<span aria-hidden="true">↗</span></button>
+    <p className="landing-note">{authenticated ? "Tus viajes guardados te esperan en Mis viajes." : "Accede con Google para planificar y guardar tus rutas en tu cuenta."}</p>
+    <div className="intro-stats"><span><strong>01</strong> destino elegido</span><span><strong>∞</strong> formas de viajar</span></div>
+  </section>;
+}
+function Footer() {
+  return <footer><span>ruta / AI</span><span>Para curiosos, caminantes y sobremesas largas.</span><span>© 2026</span></footer>;
+}
 export default function Home() {
-  const { data: session, status: sessionStatus } = useSession();
-  const [country, setCountry] = useState<keyof typeof europe>("Portugal");
-  const [city, setCity] = useState("Lisboa");
-  const [startDate, setStartDate] = useState("2026-10-12");
-  const [endDate, setEndDate] = useState("2026-10-15");
-  const [arrival, setArrival] = useState("10:30");
-  const [departure, setDeparture] = useState("18:00");
-  const [hotel, setHotel] = useState("Memmo Príncipe Real");
-  const [budget, setBudget] = useState("Medio");
-  const [pace, setPace] = useState("Equilibrado");
-  const [selectedInterests, setSelectedInterests] = useState<string[]>(["Monumentos", "Cafeterías", "Foodies", "Museos"]);
-  const [notes, setNotes] = useState("");
-  const [adjustment, setAdjustment] = useState("");
-  const [itinerary, setItinerary] = useState<Day[]>(exampleDays);
-  const [savedTrips, setSavedTrips] = useState<SavedTrip[]>([]);
-  const [isHydrated, setIsHydrated] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [destinationImage, setDestinationImage] = useState("");
-  const [savedWindow, setSavedWindow] = useState<"list" | "detail" | null>(null);
-  const [activeTrip, setActiveTrip] = useState<SavedTrip | null>(null);
-  const [remainingGenerations, setRemainingGenerations] = useState<number | null>(null);
-  const cities = useMemo(() => europe[country], [country]);
-  const tripDays = useMemo(() => getTripDays(startDate, endDate), [startDate, endDate]);
-  const mapsKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+  const { data: session, status } = useSession();
+  if (!session?.user?.id) {
+    return <main className="app-shell">
+      <nav className="topbar"><Link className="brand" href="/"><span className="brand-mark">✦</span> ruta / <strong>AI</strong></Link><span className="section-kicker">travel studio</span></nav>
+      <Landing authenticated={false} loading={status === "loading"} onContinue={() => void signIn("google", { callbackUrl: "/#planner" })} />
+      <Footer />
+    </main>;
+  }
+  // A different Google account gets an entirely new client state. No shared localStorage.
+  return <TravelStudio key={session.user.id} userName={session.user.name || session.user.email || "Viajero"} />;
+}
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      const stored = window.localStorage.getItem("ruta-ai-trips");
-      if (stored) setSavedTrips(JSON.parse(stored) as SavedTrip[]);
-      setIsHydrated(true);
-    }, 0);
-    return () => window.clearTimeout(timer);
+function TravelStudio({ userName }: { userName: string }) {
+  const [screen, setScreen] = useState<Screen>("home");
+  const [settings, setSettings] = useState<TripSettings>(initialSettings);
+  const [current, setCurrent] = useState<CurrentTrip | null>(null);
+  const [savedTrips, setSavedTrips] = useState<SavedTrip[]>([]);
+  const [libraryLoading, setLibraryLoading] = useState(true);
+  const [libraryError, setLibraryError] = useState("");
+  const [remaining, setRemaining] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [imageLoading, setImageLoading] = useState(false);
+  const [imageError, setImageError] = useState("");
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [adjustment, setAdjustment] = useState("");
+  const [dayIndex, setDayIndex] = useState(0);
+  const [deletingId, setDeletingId] = useState("");
+  const [deleteCandidate, setDeleteCandidate] = useState("");
+  const mounted = useRef(true);
+  const imageRequest = useRef(0);
+  const operation = useRef(false);
+  const heading = useRef<HTMLHeadingElement>(null);
+
+  const loadTrips = useCallback(async () => {
+    setLibraryLoading(true);
+    setLibraryError("");
+    try {
+      const data = await jsonRequest("/api/itineraries");
+      if (!Array.isArray(data.itineraries)) throw new Error("La biblioteca no ha devuelto una respuesta válida.");
+      if (mounted.current) setSavedTrips(data.itineraries.map(parseSavedTrip));
+    } catch (requestError) {
+      if (mounted.current) setLibraryError(requestError instanceof Error ? requestError.message : "No se pudieron cargar los viajes.");
+    } finally {
+      if (mounted.current) setLibraryLoading(false);
+    }
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    if (!session?.user) {
-      setRemainingGenerations(null);
-      setSavedTrips([]);
-      return;
-    }
-
-    fetch("/api/user/quota")
-      .then((response) => response.json() as Promise<{ remaining?: number; error?: string }>)
-      .then((data) => {
-        if (!cancelled) setRemainingGenerations(typeof data.remaining === "number" ? data.remaining : null);
-      })
-      .catch(() => {
-        if (!cancelled) setRemainingGenerations(null);
-      });
-
-    fetch("/api/itineraries")
-      .then((response) => response.json() as Promise<{ itineraries?: Array<Record<string, unknown>> }>)
-      .then((data) => {
-        if (cancelled) return;
-        const itineraries = (data.itineraries ?? []).map((trip) => {
-          const rawContent = trip.content;
-          const parsedContent = typeof rawContent === "string" ? JSON.parse(rawContent) : rawContent;
-          const itinerary = Array.isArray((parsedContent as { itinerary?: Day[] })?.itinerary)
-            ? (parsedContent as { itinerary: Day[] }).itinerary
-            : [];
-
-          return {
-            id: String(trip.id ?? ""),
-            title: String(trip.title ?? "Viaje"),
-            subtitle: `${trip.startDate ? dateLabel(String(trip.startDate)) : "Sin fecha"} — ${trip.endDate ? dateLabel(String(trip.endDate)) : "Sin fecha"}`,
-            destination: String(trip.destination ?? ""),
-            itinerary,
-            country: typeof trip.country === "string" && trip.country in europe ? trip.country as keyof typeof europe : undefined,
-            hotel: typeof trip.hotel === "string" ? trip.hotel : "",
-            interests: Array.isArray(trip.interests) ? trip.interests.filter((item): item is string => typeof item === "string") : [],
-            pace: typeof trip.pace === "string" ? trip.pace : "Equilibrado",
-            notes: typeof trip.notes === "string" ? trip.notes : "",
-          } satisfies SavedTrip;
-        });
-        setSavedTrips(itineraries);
-        window.localStorage.setItem("ruta-ai-trips", JSON.stringify(itineraries));
-      })
-      .catch(() => {
-        if (!cancelled) setSavedTrips([]);
-      });
-
-    return () => { cancelled = true; };
-  }, [session]);
+    mounted.current = true;
+    const timer = window.setTimeout(() => {
+      const hash = window.location.hash.slice(1);
+      if (hash === "planner" || hash === "trips") setScreen(hash);
+      void loadTrips();
+      void jsonRequest("/api/user/quota").then((data) => {
+        if (mounted.current) setRemaining(typeof data.remaining === "number" ? data.remaining : null);
+      }).catch(() => {});
+    }, 0);
+    return () => { mounted.current = false; window.clearTimeout(timer); };
+  }, [loadTrips]);
 
   useEffect(() => {
-    let cancelled = false;
-    fetch(`/api/place-image?q=${encodeURIComponent(`${city}, ${country}, iconic monument building`)}`)
-      .then((response) => response.json() as Promise<{ url?: string | null }>)
-      .then((data) => { if (!cancelled) setDestinationImage(data.url || ""); })
-      .catch(() => { if (!cancelled) setDestinationImage(""); });
-    return () => { cancelled = true; };
-  }, [city, country]);
+    heading.current?.focus();
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, [screen]);
 
-  function changeCountry(value: keyof typeof europe) { setCountry(value); setCity(europe[value][0]); }
-  function toggleInterest(interest: string) { setSelectedInterests((current) => current.includes(interest) ? current.filter((item) => item !== interest) : [...current, interest]); }
-  async function saveTrip() {
-    if (!session?.user) {
-      await signIn("google");
-      return;
-    }
-
-    const trip: SavedTrip = {
-      id: `${Date.now()}`,
-      title: city,
-      subtitle: `${dateLabel(startDate)} — ${dateLabel(endDate)}`,
-      destination: `${city}, ${country}`,
-      itinerary,
-      country,
-      hotel,
-      interests: selectedInterests,
-      pace,
-      notes,
-    };
-
-    const response = await fetch("/api/itineraries", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: trip.title,
-        destination: trip.destination,
-        duration: tripDays,
-        content: { itinerary },
-        hotel,
-        country,
-        interests: selectedInterests,
-        pace,
-        notes,
-        startDate,
-        endDate,
-      }),
+  function navigate(next: Screen) {
+    setScreen(next);
+    setError("");
+    setNotice("");
+    if (next === "trips") void loadTrips();
+  }
+  function update<K extends keyof TripSettings>(key: K, value: TripSettings[K]) {
+    setSettings((previous) => {
+      const next = { ...previous, [key]: value };
+      if (key === "country") next.city = europe[value as keyof typeof europe][0];
+      next.destination = `${next.city}, ${next.country}`;
+      return next;
     });
-
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      setError(data.error || "No se pudo guardar el itinerario.");
-      return;
-    }
-
-    const next = [{ ...trip, id: String(data.id || trip.id) }, ...savedTrips];
-    setSavedTrips(next);
-    window.localStorage.setItem("ruta-ai-trips", JSON.stringify(next));
-    setActiveTrip({ ...trip, id: String(data.id || trip.id) });
-    setSavedWindow("list");
   }
+  let duration = "Revisa las fechas";
+  try { duration = `${tripDates(settings).length} días`; } catch {}
 
-  async function deleteTrip(id: string) {
-    const response = await fetch(`/api/itineraries?id=${encodeURIComponent(id)}`, { method: "DELETE" });
-    if (!response.ok) {
-      setError("No se pudo borrar este itinerario.");
-      return;
-    }
-
-    const next = savedTrips.filter((trip) => trip.id !== id);
-    setSavedTrips(next);
-    window.localStorage.setItem("ruta-ai-trips", JSON.stringify(next));
-    if (activeTrip?.id === id) {
-      setActiveTrip(null);
-      setSavedWindow("list");
-    }
-  }
-  function openTrip(trip: SavedTrip) { const nextCountry = trip.country && europe[trip.country] ? trip.country : country; setCountry(nextCountry); setCity(trip.title); setHotel(trip.hotel || ""); setSelectedInterests(trip.interests || []); setPace(trip.pace || "Equilibrado"); setNotes(trip.notes || ""); setItinerary(trip.itinerary); setActiveTrip(trip); setSavedWindow("detail"); }
-  function routePlaces(day: Day) {
-    return day.stops
-      .filter((stop) => stop.place && !/llegada|traslado|check-in|hotel/i.test(stop.activity))
-      .map((stop) => ({ ...stop, place: stop.place?.trim(), address: stop.address?.trim() }))
-      .filter((stop) => Boolean(stop.place));
-  }
-  function dayMapUrl(day: Day) {
-    const places = routePlaces(day);
-    if (places.length === 0) {
-      return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${city}, ${country}`)}`;
-    }
-
-    const origin = encodeURIComponent(`${hotel || city}, ${city}, ${country}`);
-    const destination = encodeURIComponent(`${places[places.length - 1]?.place}, ${places[places.length - 1]?.address || city}, ${country}`);
-    const waypoints = places.slice(0, -1)
-      .map((place) => `${place.place}, ${place.address || city}, ${country}`)
-      .filter(Boolean)
-      .slice(0, 8)
-      .map((value) => encodeURIComponent(value))
-      .join("|");
-
-    return `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}${waypoints ? `&waypoints=${waypoints}` : ""}&travelmode=walking`;
-  }
-  function dayMapEmbedUrl(day: Day) {
-    const places = routePlaces(day);
-    if (places.length === 0) {
-      return `https://www.google.com/maps?q=${encodeURIComponent(`${city}, ${country}`)}&output=embed`;
-    }
-
-    const origin = encodeURIComponent(`${hotel || city}, ${city}, ${country}`);
-    const destination = encodeURIComponent(`${places[places.length - 1]?.place}, ${places[places.length - 1]?.address || city}, ${country}`);
-    const waypoints = places.slice(0, -1)
-      .map((place) => `${place.place}, ${place.address || city}, ${country}`)
-      .filter(Boolean)
-      .slice(0, 8)
-      .map((value) => encodeURIComponent(value))
-      .join("|");
-
-    if (mapsKey && !mapsKey.includes("pega_aqui")) {
-      const waypointQuery = waypoints ? `&waypoints=${waypoints}` : "";
-      return `https://www.google.com/maps/embed/v1/directions?key=${mapsKey}&origin=${origin}&destination=${destination}${waypointQuery}&mode=walking`;
-    }
-
-    return `https://www.google.com/maps?q=${encodeURIComponent(`${places[0]?.place || city}, ${country}`)}&output=embed`;
-  }
-
-  async function createItinerary(event?: FormEvent<HTMLFormElement>) {
-    event?.preventDefault(); setIsLoading(true); setError("");
+  async function generateImage(trip: CurrentTrip) {
+    if (!trip.landmark) return;
+    const requestId = ++imageRequest.current;
+    setImageLoading(true);
+    setImageError("");
     try {
-      if (!session) { await signIn("google"); return; }
-      const response = await fetch("/api/generate-itinerary", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          destination: `${city}, ${country}`,
-          days: String(tripDays),
-          startDate,
-          endDate,
-          arrival,
-          departure,
-          hotel,
-          interests: selectedInterests,
-          budget,
-          pace,
-          notes,
-          adjustment,
-        }),
+      const data = await jsonRequest("/api/place-image", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ destination: trip.settings.destination, landmark: trip.landmark }),
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "No se pudo crear el itinerario.");
-      setItinerary(data.itinerary);
-      setAdjustment("");
-      const quotaResponse = await fetch("/api/user/quota");
-      const quotaData = await quotaResponse.json();
-      if (quotaResponse.ok && typeof quotaData.remaining === "number") setRemainingGenerations(quotaData.remaining);
+      if (mounted.current && requestId === imageRequest.current) {
+        setCurrent((previous) => previous && previous.settings === trip.settings ? { ...previous, imageUrl: data.url } : previous);
+      }
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Algo salió mal.");
+      if (mounted.current && requestId === imageRequest.current) setImageError(requestError instanceof Error ? requestError.message : "No se pudo generar la imagen.");
     } finally {
-      setIsLoading(false);
+      if (mounted.current && requestId === imageRequest.current) setImageLoading(false);
     }
   }
+  async function createItinerary(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (operation.current) return;
+    setError("");
+    try { parseSettings(settings); } catch (validationError) {
+      setError(validationError instanceof Error ? validationError.message : "Revisa tus fechas."); return;
+    }
+    operation.current = true;
+    setBusy(true);
+    try {
+      const snapshot = { ...settings, interests: [...settings.interests] };
+      const data = await jsonRequest("/api/generate-itinerary", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(snapshot),
+      });
+      if (!mounted.current) return;
+      const trip: CurrentTrip = { settings: snapshot, itinerary: validateItinerary(data.itinerary, snapshot), landmark: data.landmark, imageUrl: "" };
+      setCurrent(trip);
+      setDayIndex(0); setAdjustment(""); setNotice("");
+      setRemaining(data.remaining ?? null);
+      setScreen("itinerary");
+      void generateImage(trip);
+    } catch (requestError) {
+      if (mounted.current) setError(requestError instanceof Error ? requestError.message : "No se pudo crear el itinerario.");
+    } finally {
+      operation.current = false;
+      if (mounted.current) setBusy(false);
+    }
+  }
+  async function correctDay(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!current || !adjustment.trim() || operation.current) return;
+    operation.current = true;
+    setBusy(true); setError(""); setNotice("");
+    const selectedIndex = dayIndex;
+    const original = current;
+    try {
+      const data = await jsonRequest("/api/generate-itinerary", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...original.settings, dayIndex: selectedIndex, currentDay: original.itinerary[selectedIndex], adjustment }),
+      });
+      if (!mounted.current) return;
+      if (data.dayIndex !== selectedIndex) throw new Error("La corrección no corresponde al día seleccionado.");
+      const itinerary = replaceDay(original.itinerary, data.day, original.settings, selectedIndex);
+      setCurrent((previous) => previous ? { ...previous, itinerary, savedId: undefined } : previous);
+      setAdjustment(""); setRemaining(data.remaining ?? null);
+      setNotice(`Día ${selectedIndex + 1} actualizado. Los demás días no han cambiado. Pulsa Guardar para conservar esta versión.`);
+    } catch (requestError) {
+      if (mounted.current) setError(requestError instanceof Error ? requestError.message : "No se pudo corregir el día.");
+    } finally {
+      operation.current = false;
+      if (mounted.current) setBusy(false);
+    }
+  }
+  async function saveTrip() {
+    if (!current || current.savedId || operation.current) return;
+    operation.current = true; setSaving(true); setError(""); setNotice("");
+    try {
+      const data = await jsonRequest("/api/itineraries", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...current.settings, content: { itinerary: current.itinerary, landmark: current.landmark, imageUrl: current.imageUrl } }),
+      });
+      if (!mounted.current) return;
+      setCurrent((previous) => previous ? { ...previous, savedId: data.id } : previous);
+      setNotice("Viaje guardado en tu cuenta de Google. Seguirá en Mis viajes aunque cierres sesión.");
+      void loadTrips();
+    } catch (requestError) {
+      if (mounted.current) setError(requestError instanceof Error ? requestError.message : "No se pudo guardar el viaje.");
+    } finally {
+      operation.current = false;
+      if (mounted.current) setSaving(false);
+    }
+  }
+  function openTrip(saved: SavedTrip) {
+    if (!saved.trip) {
+      // Older releases omitted dates and end times. Do not invent travel boundaries.
+      setSettings({
+        ...initialSettings,
+        country: typeof saved.raw.country === "string" && saved.raw.country in europe ? saved.raw.country : "Portugal",
+        city: saved.title, destination: saved.destination, hotel: String(saved.raw.hotel || ""),
+        startDate: String(saved.raw.startDate || ""), endDate: String(saved.raw.endDate || ""),
+        arrival: String(saved.raw.arrival || ""), departure: String(saved.raw.departure || ""),
+        notes: String(saved.raw.notes || ""),
+      });
+      setScreen("planner"); setError("");
+      setNotice("Este viaje antiguo no incluye todos los horarios necesarios. Completa sus fechas y horas para generar una ruta validada. El original sigue guardado.");
+      return;
+    }
+    imageRequest.current++;
+    setImageLoading(false); setImageError("");
+    setCurrent(saved.trip); setSettings(saved.trip.settings);
+    setDayIndex(0); setAdjustment(""); navigate("itinerary");
+  }
+  async function deleteTrip(id: string) {
+    setDeletingId(id); setLibraryError("");
+    try {
+      await jsonRequest(`/api/itineraries?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!mounted.current) return;
+      setSavedTrips((previous) => previous.filter((trip) => trip.id !== id));
+      setCurrent((previous) => previous?.savedId === id ? { ...previous, savedId: undefined } : previous);
+      setDeleteCandidate("");
+    } catch (requestError) {
+      if (mounted.current) setLibraryError(requestError instanceof Error ? requestError.message : "No se pudo borrar el viaje.");
+    } finally {
+      if (mounted.current) setDeletingId("");
+    }
+  }
+  const locked = busy || saving;
+  const countries = Object.keys(europe);
+  const cities = europe[settings.country as keyof typeof europe] ?? europe.Portugal;
 
   return <main className="app-shell">
-    <nav className="topbar"><a className="brand" href="#top"><span className="brand-mark">✦</span> ruta / <strong>AI</strong><small>1.1</small></a><div className="topbar-meta"><span className="status-dot" /> travel studio <span className="topbar-divider" /> {session?.user ? <><span className="user-label">{session.user.name || session.user.email}</span><button className="auth-button" onClick={() => signOut()}>Salir</button></> : <button className="auth-button" onClick={() => signIn("google")}>{sessionStatus === "loading" ? "Cargando..." : "Entrar con Google"}</button>}</div></nav>
-    <section className="intro" id="top"><div className="eyebrow"><span /> Planificador inteligente de viajes</div><h1>Tu próxima ruta,<br /><em>bien trazada.</em></h1><p className="intro-copy">Destinos, paseos y sobremesas pensados con calma. Diseña el viaje; Gemini se ocupa de unir los puntos.</p><div className="intro-stats"><span><strong>01</strong> destino elegido</span><span><strong>∞</strong> formas de viajar</span></div></section>
-    <section className="workspace">
-      <form className="planner-card" onSubmit={createItinerary}><div className="card-heading"><div><span className="section-kicker">01 / El punto de partida</span><h2>Diseña tu viaje</h2></div><span className="sparkle">✦</span></div>
-        <div className="field-row"><label className="field"><span>País</span><select value={country} onChange={(event) => changeCountry(event.target.value as keyof typeof europe)}>{Object.keys(europe).map((item) => <option key={item} value={item}>{item === "UnitedKingdom" ? "Reino Unido" : item}</option>)}</select></label><label className="field"><span>Ciudad</span><select value={city} onChange={(event) => setCity(event.target.value)}>{cities.map((item) => <option key={item}>{item}</option>)}</select></label></div>
-        <label className="field"><span>Hotel base del viaje</span><input value={hotel} onChange={(event) => setHotel(event.target.value)} placeholder="Nombre o dirección del hotel" /></label>
-        <div className="field-row"><label className="field"><span>Fecha de llegada</span><input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label><label className="field"><span>Fecha de salida</span><input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} /></label></div>
-        <div className="field-row"><label className="field"><span>Hora de llegada</span><input type="time" value={arrival} onChange={(event) => setArrival(event.target.value)} /></label><label className="field"><span>Hora de salida</span><input type="time" value={departure} onChange={(event) => setDeparture(event.target.value)} /></label></div>
-        <div className="field-row"><label className="field"><span>Duración</span><input value={`${tripDays} días`} readOnly /></label><label className="field"><span>Presupuesto</span><select value={budget} onChange={(event) => setBudget(event.target.value)}><option>Esencial</option><option>Medio</option><option>Sin límite</option></select></label></div>
-        <div className="choice-block"><span className="field-label">Quiero recomendaciones de...</span><div className="interest-grid">{interests.map((interest) => <button type="button" className={`interest ${selectedInterests.includes(interest) ? "selected" : ""}`} key={interest} onClick={() => toggleInterest(interest)}>{interest}<span>{selectedInterests.includes(interest) ? "✓" : "+"}</span></button>)}</div></div>
-        <div className="choice-block"><span className="field-label">Ritmo del viaje</span><div className="choices">{["Pausado", "Equilibrado", "Intenso"].map((option) => <button type="button" className={`choice ${pace === option ? "selected" : ""}`} key={option} onClick={() => setPace(option)}>{option}</button>)}</div></div>
-        <label className="field"><span>Un detalle para hacerlo tuyo <small>opcional</small></span><textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Ej. Me encantan los mercados, viajo con mi madre..." rows={2} /></label>
-        {session && (
-          <div className="quota-banner" style={{ marginBottom: 16 }}>
-            <strong>Tu cuota diaria:</strong> {remainingGenerations === null ? "Cargando..." : `${remainingGenerations} itinerarios restantes de 5`}
+    <nav className="topbar" aria-label="Navegación principal">
+      <button className="brand brand-button" onClick={() => navigate("home")} disabled={locked}><span className="brand-mark">✦</span> ruta / <strong>AI</strong></button>
+      <div className="topbar-meta">
+        <button className={`nav-button ${screen === "trips" ? "active" : ""}`} onClick={() => navigate("trips")} disabled={locked}>Mis viajes</button>
+        <span className="user-label">{userName}</span>
+        <button className="auth-button" onClick={() => void signOut({ callbackUrl: "/" })} disabled={locked}>Salir</button>
+      </div>
+    </nav>
+    {screen === "home" && <Landing authenticated onContinue={() => navigate("planner")} />}
+    {screen !== "home" && <div className="screen-toolbar">
+      <button className="back-button" disabled={locked} onClick={() => navigate(screen === "itinerary" ? "planner" : "home")}>← {screen === "itinerary" ? "Modificar filtros" : "Volver a portada"}</button>
+      <span className="section-kicker">{screen === "planner" ? "01 / El punto de partida" : screen === "itinerary" ? "02 / Tu itinerario" : "Tu colección"}</span>
+    </div>}
+    {screen === "planner" && <section className="planner-screen">
+      <form className="planner-card" onSubmit={createItinerary}>
+        <div className="card-heading"><div><span className="section-kicker">El punto de partida</span><h2 ref={heading} tabIndex={-1}>Diseña tu viaje</h2></div><span className="sparkle">✦</span></div>
+        <fieldset disabled={locked} className="planner-fields">
+          <div className="field-row">
+            <label className="field"><span>País</span><select value={settings.country} onChange={(event) => update("country", event.target.value)}>{countries.map((item) => <option key={item} value={item}>{item === "UnitedKingdom" ? "Reino Unido" : item}</option>)}</select></label>
+            <label className="field"><span>Ciudad</span><select value={settings.city} onChange={(event) => update("city", event.target.value)}>{!cities.some((item) => item === settings.city) && <option>{settings.city}</option>}{cities.map((item) => <option key={item}>{item}</option>)}</select></label>
           </div>
-        )}
-        <button className="submit-button" type="submit" disabled={isLoading || sessionStatus === "loading"}>{isLoading ? "Calculando tu ruta..." : session ? "Crear mi itinerario" : "Entrar con Google para continuar"}<span>↗</span></button>{error && <p className="error-message">{error}</p>}<p className="privacy-note">✦ Diseñado con Gemini · Tus preferencias no se guardan</p>
+          <label className="field"><span>Hotel base del viaje</span><input value={settings.hotel} onChange={(event) => update("hotel", event.target.value)} placeholder="Nombre o dirección del hotel" maxLength={300} /></label>
+          <div className="field-row">
+            <label className="field"><span>Fecha de llegada</span><input required type="date" value={settings.startDate} onChange={(event) => update("startDate", event.target.value)} /></label>
+            <label className="field"><span>Fecha de salida</span><input required type="date" min={settings.startDate} value={settings.endDate} onChange={(event) => update("endDate", event.target.value)} /></label>
+          </div>
+          <div className="field-row">
+            <label className="field"><span>Hora de llegada (local)</span><input required type="time" value={settings.arrival} onChange={(event) => update("arrival", event.target.value)} /></label>
+            <label className="field"><span>Hora de salida (local)</span><input required type="time" value={settings.departure} onChange={(event) => update("departure", event.target.value)} /></label>
+          </div>
+          <p className="schedule-help">Solo habrá planes entre tu llegada y tu salida, incluida la duración de cada actividad. Máximo 30 días.</p>
+          <div className="field-row">
+            <label className="field"><span>Duración</span><input value={duration} readOnly /></label>
+            <label className="field"><span>Presupuesto</span><select value={settings.budget} onChange={(event) => update("budget", event.target.value)}><option>Esencial</option><option>Medio</option><option>Sin límite</option></select></label>
+          </div>
+          <div className="choice-block"><span className="field-label">Quiero recomendaciones de...</span><div className="interest-grid">{interests.map((interest) => <button type="button" aria-pressed={settings.interests.includes(interest)} className={`interest ${settings.interests.includes(interest) ? "selected" : ""}`} key={interest} onClick={() => update("interests", settings.interests.includes(interest) ? settings.interests.filter((item) => item !== interest) : [...settings.interests, interest])}>{interest}<span aria-hidden="true">{settings.interests.includes(interest) ? "✓" : "+"}</span></button>)}</div></div>
+          <div className="choice-block"><span className="field-label">Ritmo del viaje</span><div className="choices">{["Pausado", "Equilibrado", "Intenso"].map((option) => <button type="button" aria-pressed={settings.pace === option} className={`choice ${settings.pace === option ? "selected" : ""}`} key={option} onClick={() => update("pace", option)}>{option}</button>)}</div></div>
+          <label className="field"><span>Un detalle para hacerlo tuyo <small>opcional</small></span><textarea value={settings.notes} onChange={(event) => update("notes", event.target.value)} placeholder="Ej. Me encantan los mercados, viajo con mi madre..." rows={3} maxLength={3000} /></label>
+        </fieldset>
+        <div className="quota-banner">Cuota diaria: {remaining === null ? "No disponible" : `${remaining} generaciones restantes de 5`}</div>
+        <button className="submit-button" type="submit" disabled={locked || remaining === 0}>{busy ? "Trazando y validando tu ruta..." : "Planificar el viaje"}<span aria-hidden="true">↗</span></button>
+        {current && <button className="back-button resume-button" type="button" disabled={locked} onClick={() => navigate("itinerary")}>Volver al itinerario sin aplicar cambios →</button>}
+        {error && <p role="alert" className="error-message">{error}</p>}
+        {notice && <p role="status" className="notice-message">{notice}</p>}
+        <p className="privacy-note">Tus rutas se guardan en tu cuenta al pulsar el corazón.</p>
       </form>
-      <section className="itinerary-panel"><div className="panel-heading"><div><span className="section-kicker">02 / Tu ruta</span><h2>{city}</h2><p className="route-subtitle">{dateLabel(startDate)} — {dateLabel(endDate)} · base: {hotel || "tu hotel"}</p></div><button className="icon-button save-button" onClick={saveTrip} aria-label="Guardar itinerario">Guardar mi viaje</button></div><p className="route-meta"><span>{tripDays} días</span><i /><span>{selectedInterests.length} intereses</span><i /><span>{pace}</span></p>
-        {destinationImage && <img className="destination-photo" src={destinationImage} alt={`Lugar representativo de ${city}, ${country}`} />}
-        <div className="day-list">{itinerary.map((day, index) => <article className="day-card" key={`${day.day}-${index}`}><div className="day-marker"><span>{String(index + 1).padStart(2, "0")}</span><div /></div><div className="day-content"><div className="day-title"><div><span>{day.day} · {getDayDate(startDate, index)}</span><h3>{day.title}</h3><p>{day.mood}</p></div><span className="day-arrow">↗</span></div><ul>{day.stops.map((stop) => <li key={`${stop.time}-${stop.activity}`}><b>{stop.time}</b> {stop.activity}{stop.place && <small className="stop-place"> · {stop.place}{stop.address ? `, ${stop.address}` : ""}</small>}</li>)}</ul><div className="day-map"><div className="day-map-heading"><div><span className="section-kicker">Ruta andando</span><strong>Desde {hotel || "tu hotel"} · {routePlaces(day).length} paradas</strong></div><a href={dayMapUrl(day)} target="_blank" rel="noreferrer">Abrir / exportar ↗</a></div><iframe title={`Ruta andando del ${day.day}`} src={dayMapEmbedUrl(day)} loading="lazy" /></div></div></article>)}</div>
-        <div className="adjust-box"><span className="section-kicker">04 / Ajusta tu ruta</span><h3>¿Cambiarías algo?</h3><p>Escribe una petición y Gemini recalculará el itinerario manteniendo tus fechas y hotel.</p><div className="adjust-row"><input value={adjustment} onChange={(event) => setAdjustment(event.target.value)} placeholder="Ej. Cambia el museo por más vida nocturna..." /><button type="button" onClick={() => createItinerary()} disabled={!adjustment || isLoading}>Recalcular ↗</button></div></div>
-        <div className="gemini-note"><span>✦</span><div><strong>Una nota de tu copiloto</strong><p>He dejado huecos para que el viaje respire. Los mejores recuerdos rara vez caben en una agenda llena.</p></div></div>
-      </section>
-    </section>
-    <section className="saved-trips"><div className="saved-heading"><div><span className="section-kicker">05 / Tu colección</span><h2>Mis viajes</h2></div><button className="saved-open-button" onClick={() => setSavedWindow("list")}>Abrir biblioteca · {isHydrated ? savedTrips.length : 0}</button></div><p className="empty-state">Tus rutas guardadas viven en una ventana independiente para volver a ellas cuando quieras.</p></section>
-    {savedWindow && <div className="saved-modal-backdrop" role="presentation" onClick={() => setSavedWindow(null)}><section className={`saved-modal ${savedWindow === "detail" ? "saved-modal-detail" : ""}`} role="dialog" aria-modal="true" aria-label="Mis viajes" onClick={(event) => event.stopPropagation()}><header className="saved-modal-header"><div><span className="section-kicker">Tu colección</span><h2>{savedWindow === "detail" ? activeTrip?.title : "Mis viajes"}</h2>{savedWindow === "detail" && activeTrip && <p>{activeTrip.subtitle} · {activeTrip.hotel || "Sin hotel base"}</p>}</div><button className="modal-close" onClick={() => setSavedWindow(null)} aria-label="Cerrar">×</button></header>{savedWindow === "list" ? <div className="modal-trip-list">{savedTrips.length === 0 ? <p className="empty-state">Todavía no tienes viajes guardados. Pulsa el corazón de una ruta para añadirla.</p> : savedTrips.map((trip) => <article className="modal-trip-row" key={trip.id}><div><span>✦</span><strong>{trip.title}</strong><small>{trip.subtitle}</small><p>{trip.destination}</p></div><div className="modal-trip-actions"><button onClick={() => openTrip(trip)}>Ver viaje ↗</button><button className="delete-button" onClick={() => deleteTrip(trip.id)} aria-label={`Borrar viaje a ${trip.title}`}>Borrar</button></div></article>)}</div> : activeTrip && <div className="modal-detail-content"><div className="modal-detail-summary"><span className="section-kicker">Itinerario completo</span><p>{activeTrip.destination} · {activeTrip.hotel || "Sin hotel base"}</p><button className="back-button" onClick={() => setSavedWindow("list")}>← Volver a mis viajes</button><button className="delete-button" onClick={() => deleteTrip(activeTrip.id)}>Borrar este viaje</button></div><div className="day-list">{activeTrip.itinerary.map((day, index) => <article className="day-card" key={`${day.day}-${index}`}><div className="day-marker"><span>{String(index + 1).padStart(2, "0")}</span><div /></div><div className="day-content"><div className="day-title"><div><span>{day.day}</span><h3>{day.title}</h3><p>{day.mood}</p></div></div><ul>{day.stops.map((stop) => <li key={`${stop.time}-${stop.activity}`}><b>{stop.time}</b> {stop.activity}{stop.place && <small className="stop-place"> · {stop.place}{stop.address ? `, ${stop.address}` : ""}</small>}</li>)}</ul><div className="day-map"><div className="day-map-heading"><div><span className="section-kicker">Ruta andando</span><strong>Desde {activeTrip.hotel || "tu hotel"} · {routePlaces(day).length} paradas</strong></div><a href={dayMapUrl(day)} target="_blank" rel="noreferrer">Abrir / exportar ↗</a></div><iframe title={`Ruta guardada del ${day.day}`} src={dayMapEmbedUrl(day)} loading="lazy" /></div></div></article>)}</div></div>}</section></div>}
-    <footer><span>ruta / AI</span><span>Para curiosos, caminantes y sobremesas largas.</span><span>© 2026</span></footer>
+    </section>}
+    {screen === "itinerary" && current && <section className="itinerary-screen itinerary-panel">
+      <div className="panel-heading">
+        <div><span className="section-kicker">Tu ruta, a tu ritmo</span><h2 ref={heading} tabIndex={-1}>{current.settings.city}</h2><p className="route-subtitle">{dateLabel(current.settings.startDate)} · {current.settings.arrival} → {dateLabel(current.settings.endDate)} · {current.settings.departure}<br />Base: {current.settings.hotel || "Sin hotel definido"} · Horas locales del destino</p></div>
+        <button className={`icon-button save-button ${current.savedId ? "is-saved" : ""}`} onClick={() => void saveTrip()} disabled={locked || imageLoading || Boolean(current.savedId)} aria-label={current.savedId ? "Itinerario guardado en tu cuenta" : saving ? "Guardando itinerario" : "Guardar itinerario"} aria-pressed={Boolean(current.savedId)} title={imageLoading ? "Preparando la ilustración; podrás guardar en un momento" : current.savedId ? "Guardado en tu cuenta" : "Guardar en mi cuenta"}><Heart filled={Boolean(current.savedId)} /><span>Guardar</span></button>
+      </div>
+      <p className="route-meta"><span>{current.itinerary.length} días</span><i /><span>{current.settings.interests.length} intereses</span><i /><span>{current.settings.pace}</span></p>
+      {error && <p role="alert" className="error-message feedback-banner">{error}</p>}
+      {notice && <p role="status" className="notice-message feedback-banner">{notice}</p>}
+      {current.savedId && <p className="saved-confirmation" role="status">♥ Guardado en tu cuenta</p>}
+      {current.imageUrl ? <figure className="destination-figure">
+        {/* Authenticated same-origin image: Next's image optimizer cannot forward the session cookie. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img className="destination-photo" src={current.imageUrl} alt={`Ilustración de ${current.landmark?.name || "un monumento"} en ${current.settings.destination}, generada con IA`} onError={() => { setCurrent((previous) => previous ? { ...previous, imageUrl: "" } : previous); setImageError("No se ha podido cargar la ilustración guardada."); }} />
+        <figcaption>{current.landmark?.name} · Ilustración generada con Gemini, no fotografía.</figcaption>
+      </figure> : <div className="image-placeholder" role="status">
+        <span aria-hidden="true">✦</span><p>{imageLoading ? `Generando una ilustración de ${current.landmark?.name}…` : imageError || "Ilustración no disponible."}</p>
+        {!imageLoading && current.landmark && <button className="back-button" onClick={() => void generateImage(current)} disabled={locked}>Reintentar ilustración</button>}
+      </div>}
+      <div className="day-list">{current.itinerary.map((day, index) => <article className="day-card" key={day.date}>
+        <div className="day-marker"><span>{String(index + 1).padStart(2, "0")}</span><div /></div>
+        <div className="day-content">
+          <div className="day-title"><div><span>{day.day} · {dateLabel(day.date)}</span><h3>{day.title}</h3><p>{day.mood}</p></div></div>
+          {day.stops.length ? <ul>{day.stops.map((stop, stopIndex) => <li key={`${stop.time}-${stopIndex}`}><b>{stop.time}–{stop.endTime}</b><span>{stop.activity}{stop.place && <small className="stop-place">{stop.place}{stop.address ? ` · ${stop.address}` : ""}</small>}</span></li>)}</ul> : <p className="empty-state">Sin actividades programadas en este tramo. Se respeta tu horario de llegada o salida.</p>}
+          {day.stops.length > 0 && <DayMap day={day} settings={current.settings} />}
+        </div>
+      </article>)}</div>
+      <form className="adjust-box" onSubmit={correctDay}>
+        <span className="section-kicker">Ajusta un día</span><h3>¿Cambiarías algo?</h3>
+        <p>Solo se recalculará el día que elijas. El resto del itinerario, tus fechas y tus horas de llegada y salida se mantienen intactos.</p>
+        <label className="field"><span>Día que quieres corregir</span><select value={dayIndex} disabled={locked} onChange={(event) => setDayIndex(Number(event.target.value))}>{current.itinerary.map((day, index) => <option key={day.date} value={index}>{day.day} · {dateLabel(day.date)} — {day.title}</option>)}</select></label>
+        <div className="adjust-row"><input aria-label="Corrección del día seleccionado" value={adjustment} disabled={locked} maxLength={2000} onChange={(event) => setAdjustment(event.target.value)} placeholder="Ej. Sustituye el museo por un paseo..." /><button type="submit" disabled={!adjustment.trim() || locked || remaining === 0}>{busy ? "Validando el día..." : `Recalcular día ${dayIndex + 1} ↗`}</button></div>
+        <p className="adjust-quota">Cada corrección consume una generación. {remaining !== null && `${remaining} disponibles hoy.`}</p>
+      </form>
+      <div className="gemini-note"><span>✦</span><div><strong>Una nota de tu copiloto</strong><p>Los horarios están limitados a tu estancia. Confirma aperturas y disponibilidad de las visitas guiadas antes de reservar.</p></div></div>
+    </section>}
+    {screen === "trips" && <section className="library-screen">
+      <div className="saved-heading"><div><span className="section-kicker">Guardados en tu cuenta</span><h2 ref={heading} tabIndex={-1}>Mis viajes</h2></div><button className="saved-open-button" disabled={locked} onClick={() => navigate("planner")}>Planificar un viaje ↗</button></div>
+      <p className="library-copy">Tus viajes permanecen aquí aunque cierres sesión. Vuelve a entrar con la misma cuenta de Google para recuperarlos.</p>
+      {current && <button className="back-button" onClick={() => navigate("itinerary")}>← Volver al itinerario actual</button>}
+      {libraryLoading && <p role="status" className="empty-state">Cargando tus viajes...</p>}
+      {libraryError && <div role="alert" className="error-message feedback-banner">{libraryError}<button className="back-button" onClick={() => void loadTrips()}>Reintentar carga</button></div>}
+      {!libraryLoading && !libraryError && savedTrips.length === 0 && <p className="empty-state">Todavía no tienes viajes guardados. Pulsa el corazón de un itinerario para añadirlo.</p>}
+      <div className="modal-trip-list">{savedTrips.map((trip) => <article className="modal-trip-row" key={trip.id}><div><span aria-hidden="true">✦</span><strong>{trip.title}</strong><small>{trip.subtitle}</small><p>{trip.destination}</p>{!trip.trip && <p>Versión antigua: faltan fechas u horarios completos.</p>}</div><div className="modal-trip-actions">
+        <button onClick={() => openTrip(trip)} disabled={Boolean(deletingId)}>{trip.trip ? "Ver viaje ↗" : "Completar datos ↗"}</button>
+        {deleteCandidate === trip.id ? <><button className="delete-button" disabled={Boolean(deletingId)} onClick={() => void deleteTrip(trip.id)}>{deletingId === trip.id ? "Borrando..." : "Confirmar borrado"}</button><button disabled={Boolean(deletingId)} onClick={() => setDeleteCandidate("")}>Cancelar</button></> : <button className="delete-button" disabled={Boolean(deletingId)} onClick={() => setDeleteCandidate(trip.id)} aria-label={`Borrar viaje a ${trip.title}`}>Borrar</button>}
+      </div></article>)}</div>
+    </section>}
+    <Footer />
   </main>;
+}
+
+function DayMap({ day, settings }: { day: Day; settings: TripSettings }) {
+  const places = day.stops.filter((stop) => stop.place && !/llegada|traslado|check-in|hotel/i.test(stop.activity));
+  if (!places.length) return null;
+  const location = (stop: Day["stops"][number]) => `${stop.place}, ${stop.address || settings.city}, ${settings.country}`;
+  const origin = `${settings.hotel || settings.city}, ${settings.city}, ${settings.country}`;
+  const destination = location(places[places.length - 1]);
+  const waypoints = places.slice(0, -1).slice(0, 8).map(location).join("|");
+  const params = new URLSearchParams({ api: "1", origin, destination, travelmode: "walking", ...(waypoints ? { waypoints } : {}) });
+  const mapsKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+  const embedParams = new URLSearchParams({ key: mapsKey || "", origin, destination, mode: "walking", ...(waypoints ? { waypoints } : {}) });
+  const embed = mapsKey && !mapsKey.includes("pega_aqui") ? `https://www.google.com/maps/embed/v1/directions?${embedParams}` : `https://www.google.com/maps?q=${encodeURIComponent(location(places[0]))}&output=embed`;
+  return <div className="day-map"><div className="day-map-heading"><div><span className="section-kicker">Ruta andando</span><strong>Desde {settings.hotel || settings.city} · {places.length} paradas</strong></div><a href={`https://www.google.com/maps/dir/?${params}`} target="_blank" rel="noreferrer">Abrir / exportar ↗</a></div><iframe title={`Ruta andando del ${day.day}`} src={embed} loading="lazy" referrerPolicy="no-referrer-when-downgrade" /></div>;
 }

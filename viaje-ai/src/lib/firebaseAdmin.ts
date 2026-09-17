@@ -157,6 +157,11 @@ export async function saveUserItinerary(input: {
   interests?: string[];
   pace?: string;
   notes?: string;
+  startDate?: string;
+  endDate?: string;
+  arrival?: string;
+  departure?: string;
+  budget?: string;
 }) {
   const now = new Date().toISOString();
   const db = getAdminDb();
@@ -174,6 +179,11 @@ export async function saveUserItinerary(input: {
     interests: input.interests ?? [],
     pace: input.pace ?? "",
     notes: input.notes ?? "",
+    startDate: input.startDate ?? "",
+    endDate: input.endDate ?? "",
+    arrival: input.arrival ?? "",
+    departure: input.departure ?? "",
+    budget: input.budget ?? "Medio",
     createdAt: now,
     updatedAt: now,
   });
@@ -183,12 +193,13 @@ export async function saveUserItinerary(input: {
 
 export async function listUserItineraries(userId: string) {
   const db = getAdminDb();
-  const snapshot = await db.collection("itineraries").where("userId", "==", userId).orderBy("createdAt", "desc").get();
+  // A single-field query works without a separately deployed composite index.
+  // Signing out only clears the client session, never these persistent documents.
+  const snapshot = await db.collection("itineraries").where("userId", "==", userId).get();
 
-  return snapshot.docs.map((doc) => ({
-    id: doc.id,
-    ...doc.data(),
-  }));
+  return snapshot.docs
+    .map((doc) => ({ ...doc.data(), id: doc.id }))
+    .sort((a, b) => String((b as Record<string, unknown>).createdAt ?? "").localeCompare(String((a as Record<string, unknown>).createdAt ?? "")));
 }
 
 export async function deleteUserItinerary(userId: string, itineraryId: string) {
