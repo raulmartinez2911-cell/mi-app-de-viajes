@@ -172,6 +172,19 @@ h2[tabindex="-1"]:focus { outline: none; }
 .modal-trip-row small, .modal-trip-row p { color: var(--muted); font-size: 12px; line-height: 1.7; }
 .modal-trip-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .modal-trip-actions .delete-button { color: #a03b2c; background: #fff4ef; border-color: #efc9be; }
+.trip-tabs { display: flex; gap: 8px; border-bottom: 1px solid var(--line); margin-top: 28px; }
+.trip-tabs button { background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--muted); font-size: 12px; padding: 12px 4px; }
+.trip-tabs button.active { border-color: var(--coral); color: var(--ink); font-weight: 700; }
+.status-button { background: var(--ocean) !important; color: var(--leaf) !important; }
+.visited-section { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; margin: 24px 0; padding: 20px; }
+.visited-stats { align-items: baseline; display: flex; flex-wrap: wrap; gap: 8px 12px; }
+.visited-stats strong { color: var(--leaf); font-size: 42px; letter-spacing: -.05em; }
+.visited-stats b { color: var(--coral); font-size: 28px; margin-left: auto; }
+.visited-stats span { color: var(--muted); font-size: 12px; }
+.world-map { background: #edf5f2; border-radius: 10px; margin: 18px 0; overflow: hidden; }
+.world-map svg { display: block; width: 100%; }
+.manual-country { align-items: end; display: flex; gap: 14px; }
+.manual-country .field { flex: 1; margin: 0; }
 footer { display: flex; justify-content: space-between; gap: 16px; color: var(--muted); border-top: 1px solid var(--line); font: 10px/1.6 "DM Mono", monospace; margin-top: auto; padding: 24px 0; text-transform: uppercase; }
 footer span:first-child { color: var(--ink); }
 
@@ -203,6 +216,7 @@ footer span:first-child { color: var(--ink); }
   .saved-heading { align-items: flex-start; flex-direction: column; }
   .modal-trip-row { align-items: flex-start; flex-direction: column; }
   .modal-trip-actions { justify-content: flex-start; }
+  .manual-country { align-items: stretch; flex-direction: column; gap: 8px; }
   footer span:nth-child(2) { display: none; }
   footer { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
 }

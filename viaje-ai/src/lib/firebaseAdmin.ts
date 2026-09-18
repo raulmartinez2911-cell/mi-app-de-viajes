@@ -221,3 +221,23 @@ export async function deleteUserItinerary(userId: string, itineraryId: string) {
   await docRef.delete();
   return true;
 }
+
+export async function updateUserItineraryStatus(userId: string, itineraryId: string, completed: boolean) {
+  const db = getAdminDb();
+  const docRef = db.collection("itineraries").doc(itineraryId);
+  const snapshot = await docRef.get();
+  if (!snapshot.exists || snapshot.data()?.userId !== userId) return false;
+  await docRef.update({ completed, updatedAt: new Date().toISOString() });
+  return true;
+}
+
+export async function listManualVisitedCountries(userId: string) {
+  const snapshot = await getAdminDb().collection("users").doc(userId).get();
+  const countries = snapshot.data()?.manualVisitedCountries;
+  return Array.isArray(countries) ? countries.filter((country): country is string => typeof country === "string") : [];
+}
+
+export async function saveManualVisitedCountries(userId: string, countries: string[]) {
+  await getAdminDb().collection("users").doc(userId).set({ manualVisitedCountries: countries, updatedAt: new Date().toISOString() }, { merge: true });
+  return countries;
+}

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/auth";
 import worldCatalog from "@/data/world-catalog.json";
-import { deleteUserItinerary, listUserItineraries, saveUserItinerary } from "@/lib/firebaseAdmin";
+import { deleteUserItinerary, listUserItineraries, saveUserItinerary, updateUserItineraryStatus } from "@/lib/firebaseAdmin";
 import { isRecord, parseSettings, tripDates, validateItinerary, ValidationError } from "@/lib/itinerary";
 
 export async function GET() {
@@ -53,5 +53,21 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ success: true });
   } catch {
     return NextResponse.json({ error: "No se pudo borrar el viaje. Inténtalo de nuevo." }, { status: 503 });
+  }
+}
+
+export async function PATCH(request: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const itineraryId = new URL(request.url).searchParams.get("id");
+  if (!itineraryId || !/^[a-zA-Z0-9_-]{1,128}$/.test(itineraryId)) return NextResponse.json({ error: "Id no válido" }, { status: 400 });
+  const body: unknown = await request.json().catch(() => null);
+  if (!isRecord(body) || typeof body.completed !== "boolean") return NextResponse.json({ error: "Estado no válido" }, { status: 400 });
+  try {
+    const updated = await updateUserItineraryStatus(session.user.id, itineraryId, body.completed);
+    if (!updated) return NextResponse.json({ error: "No se encontró el itinerario." }, { status: 404 });
+    return NextResponse.json({ completed: body.completed });
+  } catch {
+    return NextResponse.json({ error: "No se pudo actualizar el estado." }, { status: 503 });
   }
 }
