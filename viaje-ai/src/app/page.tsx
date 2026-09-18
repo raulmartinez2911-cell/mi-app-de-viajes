@@ -3,30 +3,18 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { signIn, signOut, useSession } from "next-auth/react";
 import Link from "next/link";
+import worldCatalog from "@/data/world-catalog.json";
 import { isRecord, parseSettings, replaceDay, tripDates, validateItinerary, type Day, type Landmark, type TripSettings } from "@/lib/itinerary";
 
-const europe = {
-  Portugal: ["Lisboa", "Oporto", "Faro", "Braga", "Coímbra"], Spain: ["Barcelona", "Madrid", "Sevilla", "Valencia", "Málaga", "Bilbao", "Granada"],
-  Italy: ["Roma", "Florencia", "Milán", "Nápoles", "Venecia", "Bolonia", "Turín"], France: ["París", "Lyon", "Niza", "Burdeos", "Marsella", "Estrasburgo"],
-  Greece: ["Atenas", "Santorini", "Tesalónica", "Miconos", "Creta"], Netherlands: ["Ámsterdam", "Róterdam", "Utrecht", "La Haya"],
-  Germany: ["Berlín", "Múnich", "Hamburgo", "Colonia", "Fráncfort"], UnitedKingdom: ["Londres", "Edimburgo", "Manchester", "Liverpool", "Bath"],
-  Austria: ["Viena", "Salzburgo", "Innsbruck"], Belgium: ["Bruselas", "Brujas", "Gante", "Amberes"], Switzerland: ["Zúrich", "Ginebra", "Lucerna", "Berna"],
-  Ireland: ["Dublín", "Cork", "Galway"], Denmark: ["Copenhague", "Aarhus", "Odense"], Sweden: ["Estocolmo", "Gotemburgo", "Malmö"],
-  Norway: ["Oslo", "Bergen", "Tromsø"], Finland: ["Helsinki", "Rovaniemi", "Turku"], Iceland: ["Reikiavik", "Akureyri"],
-  Poland: ["Cracovia", "Varsovia", "Gdansk", "Wroclaw"], Czechia: ["Praga", "Brno", "Český Krumlov"], Hungary: ["Budapest", "Szeged", "Pécs"],
-  Romania: ["Bucarest", "Brașov", "Sibiu", "Cluj-Napoca"], Bulgaria: ["Sofía", "Plovdiv", "Varna"], Croatia: ["Dubrovnik", "Zagreb", "Split", "Zadar"],
-  Slovenia: ["Liubliana", "Bled", "Piran"], Slovakia: ["Bratislava", "Košice"], Serbia: ["Belgrado", "Novi Sad"], Montenegro: ["Kotor", "Budva", "Podgorica"],
-  Estonia: ["Tallin", "Tartu"], Latvia: ["Riga", "Jūrmala"], Lithuania: ["Vilna", "Kaunas", "Klaipėda"], Luxembourg: ["Luxemburgo"],
-  Malta: ["La Valeta", "Mdina", "Sliema"], Cyprus: ["Nicosia", "Limassol", "Pafos"], Turkey: ["Estambul", "Capadocia", "Esmirna"],
-} as const;
 const interests = ["Monumentos", "Spots fotográficos", "Cafeterías", "Foodies", "Museos", "Free tours", "Actividades", "Galerías de arte", "Vida nocturna", "Compras"];
 const initialSettings: TripSettings = {
-  country: "Portugal", city: "Lisboa", destination: "Lisboa, Portugal",
-  startDate: "2026-10-12", endDate: "2026-10-15", arrival: "10:30", departure: "18:00",
-  hotel: "", budget: "Medio", pace: "Equilibrado", interests: ["Monumentos", "Cafeterías", "Foodies", "Museos"], notes: "",
+  continent: "",
+  country: "", city: "", destination: "",
+  startDate: "", endDate: "", arrival: "", departure: "",
+  hotel: "", budget: "", pace: "", interests: [], notes: "",
 };
 type Screen = "home" | "planner" | "itinerary" | "trips";
-type CurrentTrip = { settings: TripSettings; itinerary: Day[]; landmark: Landmark | null; imageUrl: string; savedId?: string };
+type CurrentTrip = { settings: TripSettings; itinerary: Day[]; landmark: Landmark | null; imageUrl: string; sourceImageUrl: string; savedId?: string };
 type SavedTrip = { id: string; title: string; destination: string; subtitle: string; trip: CurrentTrip | null; raw: Record<string, unknown> };
 
 function dateLabel(date: string) {
@@ -44,6 +32,7 @@ function parseSavedTrip(raw: Record<string, unknown>): SavedTrip {
         settings, itinerary, savedId: String(raw.id),
         landmark: isRecord(content.landmark) && typeof content.landmark.name === "string" && typeof content.landmark.description === "string" ? content.landmark as Landmark : null,
         imageUrl: typeof content.imageUrl === "string" && /^\/api\/place-image\?id=[a-f0-9]{64}$/.test(content.imageUrl) ? content.imageUrl : "",
+        sourceImageUrl: typeof content.sourceImageUrl === "string" ? content.sourceImageUrl : "",
       };
     }
   } catch { /* Keep legacy documents visible; require their missing dates before replanning. */ }
@@ -58,8 +47,18 @@ async function jsonRequest(url: string, init?: RequestInit) {
   if (!response.ok) throw new Error(data.error || "No se pudo completar la solicitud.");
   return data;
 }
+function catalogEntry(settings: TripSettings) {
+  return worldCatalog.entries.find((entry) => entry.continent === settings.continent && entry.country === settings.country && entry.city === settings.city) ??
+    worldCatalog.entries.find((entry) => entry.country === settings.country && entry.city === settings.city);
+}
+function safeImageUrl(value: string) {
+  return value.replace(/^http:\/\//i, "https://");
+}
 function Heart({ filled = false }: { filled?: boolean }) {
   return <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z" /></svg>;
+}
+function PlaneSpinner() {
+  return <span className="plane-spinner" aria-hidden="true"><span>✈</span></span>;
 }
 function Landing({ authenticated, loading, onContinue }: { authenticated: boolean; loading?: boolean; onContinue: () => void }) {
   return <section className="intro landing-screen" id="top">
@@ -151,8 +150,14 @@ function TravelStudio({ userName }: { userName: string }) {
   function update<K extends keyof TripSettings>(key: K, value: TripSettings[K]) {
     setSettings((previous) => {
       const next = { ...previous, [key]: value };
-      if (key === "country") next.city = europe[value as keyof typeof europe][0];
-      next.destination = `${next.city}, ${next.country}`;
+      if (key === "continent") {
+        next.country = "";
+        next.city = "";
+      }
+      if (key === "country") {
+        next.city = worldCatalog.entries.find((entry) => entry.continent === next.continent && entry.country === value)?.city || "";
+      }
+      next.destination = next.city && next.country ? `${next.city}, ${next.country}` : "";
       return next;
     });
   }
@@ -193,7 +198,7 @@ function TravelStudio({ userName }: { userName: string }) {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(snapshot),
       });
       if (!mounted.current) return;
-      const trip: CurrentTrip = { settings: snapshot, itinerary: validateItinerary(data.itinerary, snapshot), landmark: data.landmark, imageUrl: "" };
+      const trip: CurrentTrip = { settings: snapshot, itinerary: validateItinerary(data.itinerary, snapshot), landmark: data.landmark, imageUrl: "", sourceImageUrl: safeImageUrl(catalogEntry(snapshot)?.imageUrl || "") };
       setCurrent(trip);
       setDayIndex(0); setAdjustment(""); setNotice("");
       setRemaining(data.remaining ?? null);
@@ -237,7 +242,7 @@ function TravelStudio({ userName }: { userName: string }) {
     try {
       const data = await jsonRequest("/api/itineraries", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...current.settings, content: { itinerary: current.itinerary, landmark: current.landmark, imageUrl: current.imageUrl } }),
+        body: JSON.stringify({ ...current.settings, content: { itinerary: current.itinerary, landmark: current.landmark, imageUrl: current.imageUrl, sourceImageUrl: current.sourceImageUrl } }),
       });
       if (!mounted.current) return;
       setCurrent((previous) => previous ? { ...previous, savedId: data.id } : previous);
@@ -255,8 +260,8 @@ function TravelStudio({ userName }: { userName: string }) {
       // Older releases omitted dates and end times. Do not invent travel boundaries.
       setSettings({
         ...initialSettings,
-        country: typeof saved.raw.country === "string" && saved.raw.country in europe ? saved.raw.country : "Portugal",
-        city: saved.title, destination: saved.destination, hotel: String(saved.raw.hotel || ""),
+        continent: String(saved.raw.continent || ""), country: String(saved.raw.country || ""),
+        city: String(saved.raw.city || saved.title), destination: saved.destination, hotel: String(saved.raw.hotel || ""),
         startDate: String(saved.raw.startDate || ""), endDate: String(saved.raw.endDate || ""),
         arrival: String(saved.raw.arrival || ""), departure: String(saved.raw.departure || ""),
         notes: String(saved.raw.notes || ""),
@@ -267,7 +272,7 @@ function TravelStudio({ userName }: { userName: string }) {
     }
     imageRequest.current++;
     setImageLoading(false); setImageError("");
-    setCurrent(saved.trip); setSettings(saved.trip.settings);
+    setCurrent({ ...saved.trip, sourceImageUrl: saved.trip.sourceImageUrl || safeImageUrl(catalogEntry(saved.trip.settings)?.imageUrl || "") }); setSettings(saved.trip.settings);
     setDayIndex(0); setAdjustment(""); navigate("itinerary");
   }
   async function deleteTrip(id: string) {
@@ -285,8 +290,8 @@ function TravelStudio({ userName }: { userName: string }) {
     }
   }
   const locked = busy || saving;
-  const countries = Object.keys(europe);
-  const cities = europe[settings.country as keyof typeof europe] ?? europe.Portugal;
+  const countries = [...new Set(worldCatalog.entries.filter((entry) => entry.continent === settings.continent).map((entry) => entry.country))].sort((a, b) => a.localeCompare(b, "es"));
+  const cities = [...new Set(worldCatalog.entries.filter((entry) => entry.continent === settings.continent && entry.country === settings.country).map((entry) => entry.city))].sort((a, b) => a.localeCompare(b, "es"));
 
   return <main className="app-shell">
     <nav className="topbar" aria-label="Navegación principal">
@@ -307,8 +312,12 @@ function TravelStudio({ userName }: { userName: string }) {
         <div className="card-heading"><div><span className="section-kicker">El punto de partida</span><h2 ref={heading} tabIndex={-1}>Diseña tu viaje</h2></div><span className="sparkle">✦</span></div>
         <fieldset disabled={locked} className="planner-fields">
           <div className="field-row">
-            <label className="field"><span>País</span><select value={settings.country} onChange={(event) => update("country", event.target.value)}>{countries.map((item) => <option key={item} value={item}>{item === "UnitedKingdom" ? "Reino Unido" : item}</option>)}</select></label>
-            <label className="field"><span>Ciudad</span><select value={settings.city} onChange={(event) => update("city", event.target.value)}>{!cities.some((item) => item === settings.city) && <option>{settings.city}</option>}{cities.map((item) => <option key={item}>{item}</option>)}</select></label>
+            <label className="field"><span>Continente</span><select required value={settings.continent} onChange={(event) => update("continent", event.target.value)}><option value="">-- Selecciona un continente --</option>{worldCatalog.continents.map((item) => <option key={item}>{item}</option>)}</select></label>
+            <label className="field"><span>País</span><select required value={settings.country} onChange={(event) => update("country", event.target.value)}><option value="">-- Selecciona un país --</option>{countries.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+          </div>
+          <div className="field-row">
+            <label className="field"><span>Ciudad</span><select required value={settings.city} onChange={(event) => update("city", event.target.value)}><option value="">-- Selecciona una ciudad --</option>{!cities.some((item) => item === settings.city) && settings.city && <option>{settings.city}</option>}{cities.map((item) => <option key={item}>{item}</option>)}</select></label>
+            <div className="field field-image-note"><span>Imagen postal</span><p>{catalogEntry(settings)?.imageUrl ? "Se usará la imagen del catálogo para este destino." : "Selecciona una ciudad para cargar su imagen."}</p></div>
           </div>
           <label className="field"><span>Hotel base del viaje</span><input value={settings.hotel} onChange={(event) => update("hotel", event.target.value)} placeholder="Nombre o dirección del hotel" maxLength={300} /></label>
           <div className="field-row">
@@ -322,14 +331,14 @@ function TravelStudio({ userName }: { userName: string }) {
           <p className="schedule-help">Solo habrá planes entre tu llegada y tu salida, incluida la duración de cada actividad. Máximo 30 días.</p>
           <div className="field-row">
             <label className="field"><span>Duración</span><input value={duration} readOnly /></label>
-            <label className="field"><span>Presupuesto</span><select value={settings.budget} onChange={(event) => update("budget", event.target.value)}><option>Esencial</option><option>Medio</option><option>Sin límite</option></select></label>
+            <label className="field"><span>Presupuesto</span><select required value={settings.budget} onChange={(event) => update("budget", event.target.value)}><option value="">-- Selecciona un presupuesto --</option><option>Reducido</option><option>Medio</option><option>Sin límite</option></select></label>
           </div>
           <div className="choice-block"><span className="field-label">Quiero recomendaciones de...</span><div className="interest-grid">{interests.map((interest) => <button type="button" aria-pressed={settings.interests.includes(interest)} className={`interest ${settings.interests.includes(interest) ? "selected" : ""}`} key={interest} onClick={() => update("interests", settings.interests.includes(interest) ? settings.interests.filter((item) => item !== interest) : [...settings.interests, interest])}>{interest}<span aria-hidden="true">{settings.interests.includes(interest) ? "✓" : "+"}</span></button>)}</div></div>
           <div className="choice-block"><span className="field-label">Ritmo del viaje</span><div className="choices">{["Pausado", "Equilibrado", "Intenso"].map((option) => <button type="button" aria-pressed={settings.pace === option} className={`choice ${settings.pace === option ? "selected" : ""}`} key={option} onClick={() => update("pace", option)}>{option}</button>)}</div></div>
           <label className="field"><span>Un detalle para hacerlo tuyo <small>opcional</small></span><textarea value={settings.notes} onChange={(event) => update("notes", event.target.value)} placeholder="Ej. Me encantan los mercados, viajo con mi madre..." rows={3} maxLength={3000} /></label>
         </fieldset>
         <div className="quota-banner">Cuota diaria: {remaining === null ? "No disponible" : `${remaining} generaciones restantes de 5`}</div>
-        <button className="submit-button" type="submit" disabled={locked || remaining === 0}>{busy ? "Trazando y validando tu ruta..." : "Planificar el viaje"}<span aria-hidden="true">↗</span></button>
+        <button className="submit-button" type="submit" disabled={locked || remaining === 0}>{busy ? <><PlaneSpinner /> <span className="loading-label">Trazando y validando tu ruta...</span></> : <>Planificar el viaje<span aria-hidden="true">↗</span></>}</button>
         {current && <button className="back-button resume-button" type="button" disabled={locked} onClick={() => navigate("itinerary")}>Volver al itinerario sin aplicar cambios →</button>}
         {error && <p role="alert" className="error-message">{error}</p>}
         {notice && <p role="status" className="notice-message">{notice}</p>}
@@ -345,11 +354,11 @@ function TravelStudio({ userName }: { userName: string }) {
       {error && <p role="alert" className="error-message feedback-banner">{error}</p>}
       {notice && <p role="status" className="notice-message feedback-banner">{notice}</p>}
       {current.savedId && <p className="saved-confirmation" role="status">♥ Guardado en tu cuenta</p>}
-      {current.imageUrl ? <figure className="destination-figure">
+      {(current.sourceImageUrl || current.imageUrl) ? <figure className="destination-figure">
         {/* Authenticated same-origin image: Next's image optimizer cannot forward the session cookie. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img className="destination-photo" src={current.imageUrl} alt={`Ilustración de ${current.landmark?.name || "un monumento"} en ${current.settings.destination}, generada con IA`} onError={() => { setCurrent((previous) => previous ? { ...previous, imageUrl: "" } : previous); setImageError("No se ha podido cargar la ilustración guardada."); }} />
-        <figcaption>{current.landmark?.name} · Ilustración generada con Gemini, no fotografía.</figcaption>
+        <img className="destination-photo" src={current.sourceImageUrl || current.imageUrl} alt={`Imagen postal de ${current.settings.city}, ${current.settings.country}`} onError={() => { setCurrent((previous) => previous ? { ...previous, sourceImageUrl: "", imageUrl: "" } : previous); setImageError("No se ha podido cargar la imagen del catálogo."); }} />
+        <figcaption>{current.settings.city}, {current.settings.country} · Imagen postal del catálogo.</figcaption>
       </figure> : <div className="image-placeholder" role="status">
         <span aria-hidden="true">✦</span><p>{imageLoading ? `Generando una ilustración de ${current.landmark?.name}…` : imageError || "Ilustración no disponible."}</p>
         {!imageLoading && current.landmark && <button className="back-button" onClick={() => void generateImage(current)} disabled={locked}>Reintentar ilustración</button>}

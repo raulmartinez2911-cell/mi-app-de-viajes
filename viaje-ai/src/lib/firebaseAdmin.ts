@@ -162,6 +162,7 @@ export async function saveUserItinerary(input: {
   arrival?: string;
   departure?: string;
   budget?: string;
+  continent?: string;
 }) {
   const now = new Date().toISOString();
   const db = getAdminDb();
@@ -184,6 +185,7 @@ export async function saveUserItinerary(input: {
     arrival: input.arrival ?? "",
     departure: input.departure ?? "",
     budget: input.budget ?? "Medio",
+    continent: input.continent ?? "",
     createdAt: now,
     updatedAt: now,
   });

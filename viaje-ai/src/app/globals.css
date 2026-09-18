@@ -32,6 +32,11 @@ h2[tabindex="-1"]:focus { outline: none; }
 .submit-button { display: flex; align-items: center; justify-content: space-between; gap: 16px; background: var(--coral); border: 0; border-radius: 10px; color: white; font-size: 13px; font-weight: 700; box-shadow: 0 8px 20px #ed745830; padding: 17px 18px; width: 100%; }
 .submit-button:hover:not(:disabled) { background: #bb4c36; }
 .submit-button span { font-size: 18px; }
+.submit-button:has(.plane-spinner) { justify-content: center; }
+.loading-label { font-size: 13px !important; }
+.plane-spinner { display: inline-grid; place-items: center; width: 24px; height: 24px; animation: plane-orbit 1.15s linear infinite; }
+.plane-spinner span { display: block; font-size: 21px !important; line-height: 1; }
+@keyframes plane-orbit { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .landing-cta { max-width: 340px; margin-top: 32px; }
 .landing-note, .schedule-help, .library-copy { color: var(--muted); font-size: 12px; line-height: 1.7; }
 .landing-note { max-width: 400px; }

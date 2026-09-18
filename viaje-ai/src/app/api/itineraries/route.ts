@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/auth";
+import worldCatalog from "@/data/world-catalog.json";
 import { deleteUserItinerary, listUserItineraries, saveUserItinerary } from "@/lib/firebaseAdmin";
 import { isRecord, parseSettings, tripDates, validateItinerary, ValidationError } from "@/lib/itinerary";
 
@@ -27,10 +28,12 @@ export async function POST(request: Request) {
       ? { name: String(body.content.landmark.name ?? "").slice(0, 200), description: String(body.content.landmark.description ?? "").slice(0, 1500) }
       : null;
     const imageUrl = typeof body.content.imageUrl === "string" && /^\/api\/place-image\?id=[a-f0-9]{64}$/.test(body.content.imageUrl) ? body.content.imageUrl : "";
+    const catalogEntry = worldCatalog.entries.find((entry) => entry.continent === settings.continent && entry.country === settings.country && entry.city === settings.city);
+    const sourceImageUrl = catalogEntry?.imageUrl?.replace(/^http:\/\//i, "https://") || "";
     const result = await saveUserItinerary({
       ...settings, userId: session.user.id, title: settings.city,
       duration: tripDates(settings).length,
-      content: { itinerary, settings, landmark, imageUrl },
+      content: { itinerary, settings, landmark, imageUrl, sourceImageUrl },
     });
     return NextResponse.json({ id: result.id }, { status: 201 });
   } catch (error) {

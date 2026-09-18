@@ -1,6 +1,7 @@
 export type Stop = { time: string; endTime: string; activity: string; place?: string; address?: string };
 export type Day = { day: string; date: string; title: string; mood: string; stops: Stop[] };
 export type TripSettings = {
+  continent: string;
   destination: string;
   country: string;
   city: string;
@@ -67,6 +68,7 @@ export function parseSettings(body: unknown): TripSettings {
     return value.trim();
   };
   const settings: TripSettings = {
+    continent: typeof body.continent === "string" ? body.continent.trim() : "",
     destination: text("destination"), country: text("country"), city: text("city"),
     startDate: text("startDate"), endDate: text("endDate"), arrival: text("arrival"), departure: text("departure"),
     hotel: text("hotel"), budget: text("budget"), pace: text("pace"), notes: text("notes", 3000),
