@@ -29,7 +29,7 @@ export default function WorldMap({ visited }: { visited: string[] }) {
         {({ geographies }) => geographies.map((geography) => {
           const name = String(geography.properties?.name || "");
           const isVisited = visitedSet.has(name.toLocaleLowerCase("es"));
-          return <Geography key={geography.rsmKey} geography={geography} fill={isVisited ? colorFor(name) : "#dce3e1"} stroke="#ffffff" strokeWidth={0.5} onMouseEnter={() => setHoveredCountry(name)} onMouseLeave={() => setHoveredCountry("")} style={{ default: { outline: "none" }, hover: { outline: "none", opacity: 0.78 }, pressed: { outline: "none" } }} />;
+          return <Geography key={geography.rsmKey} geography={geography} fill={isVisited ? colorFor(name) : "#dce3e1"} stroke="#ffffff" strokeWidth={0.5} onMouseEnter={() => setHoveredCountry(name)} onMouseLeave={() => setHoveredCountry("")} />;
         })}
       </Geographies>
     </ComposableMap>
