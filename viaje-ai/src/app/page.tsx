@@ -280,9 +280,10 @@ function TravelStudio({ userName }: { userName: string }) {
       if (mounted.current) setLibraryError(requestError instanceof Error ? requestError.message : "No se pudo actualizar el estado.");
     }
   }
-  async function addManualCountry() {
-    if (!manualCountry || manualVisitedCountries.includes(manualCountry)) return;
-    const countries = [...manualVisitedCountries, manualCountry];
+  async function addManualCountry(country?: string) {
+    const target = country || manualCountry;
+    if (!target || manualVisitedCountries.includes(target)) return;
+    const countries = [...manualVisitedCountries, target];
     try {
       const data = await jsonRequest("/api/visited-countries", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ countries }) });
       if (mounted.current) { setManualVisitedCountries(data.countries); setManualCountry(""); }
@@ -388,10 +389,10 @@ function TravelStudio({ userName }: { userName: string }) {
       {libraryLoading && <p role="status" className="empty-state">Cargando tus viajes...</p>}
       {libraryError && <div role="alert" className="error-message feedback-banner">{libraryError}<button className="back-button" onClick={() => void loadTrips()}>Reintentar carga</button></div>}
       {!libraryLoading && !libraryError && savedTrips.length === 0 && <p className="empty-state">Todavía no tienes viajes guardados. Pulsa el corazón de un itinerario para añadirlo.</p>}
-      {tripSection === "completed" && <section className="visited-section"><div className="visited-stats"><strong>{visitedCountries.length}</strong><span>países visitados</span><b>{Math.round((visitedCountries.length / 195) * 100)}%</b><span>del mundo</span></div><WorldMap visited={visitedCountries} /><div className="manual-country"><label className="field"><span>Añadir un país visitado anteriormente</span><select value={manualCountry} onChange={(event) => setManualCountry(event.target.value)}><option value="">-- Selecciona un país --</option>{availableManualCountries.filter((country) => !manualVisitedCountries.includes(country)).map((country) => <option key={country}>{country}</option>)}</select></label><button className="back-button" onClick={() => void addManualCountry()} disabled={!manualCountry}>Añadir país</button></div></section>}
+      {tripSection === "completed" && <section className="visited-section"><div className="visited-stats"><strong>{visitedCountries.length}</strong><span>países visitados</span><b>{Math.round((visitedCountries.length / 195) * 100)}%</b><span>del mundo</span></div><WorldMap visited={visitedCountries} onAddCountry={(country) => void addManualCountry(country)} /><div className="manual-country"><label className="field"><span>Añadir un país visitado anteriormente</span><select value={manualCountry} onChange={(event) => setManualCountry(event.target.value)}><option value="">-- Selecciona un país --</option>{availableManualCountries.filter((country) => !manualVisitedCountries.includes(country)).map((country) => <option key={country}>{country}</option>)}</select></label><button className="back-button" onClick={() => void addManualCountry()} disabled={!manualCountry}>Añadir país</button></div></section>}
       <div className="modal-trip-list">{savedTrips.filter((trip) => trip.completed === (tripSection === "completed")).map((trip) => <article className="modal-trip-row" key={trip.id}><div><span aria-hidden="true">✦</span><strong>{trip.title}</strong><small>{trip.subtitle}</small><p>{trip.destination}</p>{!trip.trip && <p>Versión antigua: faltan fechas u horarios completos.</p>}</div><div className="modal-trip-actions">
         <button onClick={() => openTrip(trip)} disabled={Boolean(deletingId)}>{trip.trip ? "Ver viaje ↗" : "Completar datos ↗"}</button>
-        <button className="status-button" onClick={() => void setTripCompleted(trip, !trip.completed)}>{trip.completed ? "✓ Realizado" : "○ Pendiente"}</button>
+        <label className="status-check"><input type="checkbox" checked={trip.completed} onChange={(event) => void setTripCompleted(trip, event.target.checked)} /> Realizado</label>
         {deleteCandidate === trip.id ? <><button className="delete-button" disabled={Boolean(deletingId)} onClick={() => void deleteTrip(trip.id)}>{deletingId === trip.id ? "Borrando..." : "Confirmar borrado"}</button><button disabled={Boolean(deletingId)} onClick={() => setDeleteCandidate("")}>Cancelar</button></> : <button className="delete-button" disabled={Boolean(deletingId)} onClick={() => setDeleteCandidate(trip.id)} aria-label={`Borrar viaje a ${trip.title}`}>Borrar</button>}
       </div></article>)}</div>
     </section>}
