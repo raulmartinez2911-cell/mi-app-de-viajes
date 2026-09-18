@@ -46,8 +46,25 @@ function parseSavedTrip(raw: Record<string, unknown>): SavedTrip {
 async function jsonRequest(url: string, init?: RequestInit) {
   const response = await fetch(url, { cache: "no-store", ...init });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || "No se pudo completar la solicitud.");
+  if (!response.ok) {
+    const error = new Error(data.error || "No se pudo completar la solicitud.") as Error & { status?: number };
+    error.status = response.status;
+    throw error;
+  }
   return data;
+}
+// Gemini can fail once under load; a single silent retry avoids showing an error for a transient hiccup.
+async function jsonRequestWithRetry(url: string, init?: RequestInit) {
+  try {
+    return await jsonRequest(url, init);
+  } catch (error) {
+    const status = (error as { status?: number }).status;
+    if (status && [502, 503, 504].includes(status)) {
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      return jsonRequest(url, init);
+    }
+    throw error;
+  }
 }
 function catalogEntry(settings: TripSettings) {
   return worldCatalog.entries.find((entry) => entry.continent === settings.continent && entry.country === settings.country && entry.city === settings.city) ??
@@ -180,7 +197,7 @@ function TravelStudio({ userName }: { userName: string }) {
     setBusy(true);
     try {
       const snapshot = { ...settings, interests: [...settings.interests] };
-      const data = await jsonRequest("/api/generate-itinerary", {
+      const data = await jsonRequestWithRetry("/api/generate-itinerary", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(snapshot),
       });
       if (!mounted.current) return;
@@ -204,7 +221,7 @@ function TravelStudio({ userName }: { userName: string }) {
     const selectedIndex = dayIndex;
     const original = current;
     try {
-      const data = await jsonRequest("/api/generate-itinerary", {
+      const data = await jsonRequestWithRetry("/api/generate-itinerary", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...original.settings, dayIndex: selectedIndex, currentDay: original.itinerary[selectedIndex], adjustment }),
       });

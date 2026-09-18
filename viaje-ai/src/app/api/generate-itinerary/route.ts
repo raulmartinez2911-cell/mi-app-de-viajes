@@ -4,7 +4,7 @@ import { authOptions } from "@/auth";
 import { MAX_DAILY_GENERATIONS, ensureUserDocument, getUserDailyQuota, incrementUserDailyGeneration } from "@/lib/firebaseAdmin";
 import { dayBounds, isRecord, parseSettings, tripDates, validateDay, validateItinerary, ValidationError } from "@/lib/itinerary";
 
-export const maxDuration = 120;
+export const maxDuration = 60;
 
 export async function POST(request: Request) {
   const session = await getServerSession(authOptions);
@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
-    const model = process.env.GEMINI_MODEL || "gemini-3.6-flash";
+    const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
     if (!apiKey || /pega_aqui|tu_clave/.test(apiKey)) {
       return NextResponse.json({ error: "Configura GEMINI_API_KEY en el servidor." }, { status: 503 });
     }
@@ -59,22 +59,34 @@ ${correcting
 
     let feedback = "";
     for (let attempt = 0; attempt < 3; attempt++) {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt + feedback }] }],
-          generationConfig: { temperature: 0.5, responseMimeType: "application/json" },
-        }),
-        signal: AbortSignal.timeout(30000),
-      });
-      const result = await response.json();
+      let response: Response;
+      try {
+        response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt + feedback }] }],
+            generationConfig: { temperature: 0.5, responseMimeType: "application/json" },
+          }),
+          signal: AbortSignal.timeout(18000),
+        });
+      } catch (networkError) {
+        // Timeouts and connection drops are transient; worth a retry before giving up.
+        if (attempt < 2) { await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1))); continue; }
+        console.error("Gemini request failed", networkError instanceof Error ? networkError.message : networkError);
+        return NextResponse.json({ error: "Gemini ha tardado demasiado en responder. No se ha consumido cuota; inténtalo de nuevo en unos segundos." }, { status: 503 });
+      }
+      const result = await response.json().catch(() => ({}));
       if (!response.ok) {
-        if ([429, 503].includes(response.status) && attempt < 2) {
+        if ([429, 500, 502, 503, 504].includes(response.status) && attempt < 2) {
           await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
           continue;
         }
-        return NextResponse.json({ error: `Gemini no pudo generar la ruta (${response.status}). Revisa el modelo configurado o inténtalo más tarde.` }, { status: 502 });
+        console.error("Gemini API error", response.status, JSON.stringify(result).slice(0, 500));
+        const detail = isRecord(result) && isRecord(result.error) && typeof result.error.message === "string" ? result.error.message.slice(0, 200) : "";
+        const modelIssue = response.status === 404 || response.status === 400;
+        const hint = modelIssue ? `El modelo "${model}" no está disponible con tu clave. Revisa la variable GEMINI_MODEL.` : "Inténtalo de nuevo en unos segundos.";
+        return NextResponse.json({ error: `Gemini no pudo generar la ruta (${response.status}). ${hint}${detail ? ` Detalle: ${detail}` : ""}` }, { status: 502 });
       }
       try {
         const text = result.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text || "").join("") || "";
