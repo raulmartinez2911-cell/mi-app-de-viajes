@@ -183,6 +183,7 @@ h2[tabindex="-1"]:focus { outline: none; }
 .visited-stats span { color: var(--muted); font-size: 12px; }
 .world-map { background: #edf5f2; border-radius: 10px; margin: 18px 0; overflow: hidden; }
 .world-map svg { display: block; width: 100%; }
+.world-map-label { background: var(--ink); border-radius: 999px; color: white; display: table; font-size: 11px; margin: 12px auto 0; padding: 6px 10px; }
 .manual-country { align-items: end; display: flex; gap: 14px; }
 .manual-country .field { flex: 1; margin: 0; }
 footer { display: flex; justify-content: space-between; gap: 16px; color: var(--muted); border-top: 1px solid var(--line); font: 10px/1.6 "DM Mono", monospace; margin-top: auto; padding: 24px 0; text-transform: uppercase; }

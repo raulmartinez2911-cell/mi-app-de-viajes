@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { ComposableMap, Geographies, Geography } from "react-simple-maps";
 import worldData from "world-atlas/countries-110m.json";
 
@@ -19,14 +20,16 @@ function colorFor(country: string) {
 }
 
 export default function WorldMap({ visited }: { visited: string[] }) {
+  const [hoveredCountry, setHoveredCountry] = useState("");
   const visitedSet = new Set(visited.map((country) => (countryAliases[country] || country).toLocaleLowerCase("es")));
   return <div className="world-map" aria-label="Mapa mundial de países visitados">
+    {hoveredCountry && <p className="world-map-label" role="status">{hoveredCountry}</p>}
     <ComposableMap projectionConfig={{ scale: 145 }}>
       <Geographies geography={worldData as unknown as string}>
         {({ geographies }) => geographies.map((geography) => {
           const name = String(geography.properties?.name || "");
           const isVisited = visitedSet.has(name.toLocaleLowerCase("es"));
-          return <Geography key={geography.rsmKey} geography={geography} fill={isVisited ? colorFor(name) : "#dce3e1"} stroke="#ffffff" strokeWidth={0.5} />;
+          return <Geography key={geography.rsmKey} geography={geography} fill={isVisited ? colorFor(name) : "#dce3e1"} stroke="#ffffff" strokeWidth={0.5} onMouseEnter={() => setHoveredCountry(name)} onMouseLeave={() => setHoveredCountry("")} style={{ default: { outline: "none" }, hover: { outline: "none", opacity: 0.78 }, pressed: { outline: "none" } }} />;
         })}
       </Geographies>
     </ComposableMap>
