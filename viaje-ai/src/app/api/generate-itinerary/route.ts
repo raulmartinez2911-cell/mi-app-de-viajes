@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
-    const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+    const model = process.env.GEMINI_MODEL || "gemini-3.6-flash";
     if (!apiKey || /pega_aqui|tu_clave/.test(apiKey)) {
       return NextResponse.json({ error: "Configura GEMINI_API_KEY en el servidor." }, { status: 503 });
     }
