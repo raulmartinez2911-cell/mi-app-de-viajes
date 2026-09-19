@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/auth";
-import { MAX_DAILY_GENERATIONS, ensureUserDocument, getUserDailyQuota, incrementUserDailyGeneration } from "@/lib/firebaseAdmin";
+import { acquireGeminiSlot, MAX_DAILY_GENERATIONS, ensureUserDocument, getUserDailyQuota, incrementUserDailyGeneration } from "@/lib/firebaseAdmin";
 import { dayBounds, isRecord, parseSettings, tripDates, validateDay, validateItinerary, ValidationError } from "@/lib/itinerary";
 
 export const maxDuration = 60;
@@ -35,6 +35,10 @@ export async function POST(request: Request) {
     await ensureUserDocument({ uid: userId, email: session.user.email, displayName: session.user.name, photoURL: session.user.image });
     const quota = await getUserDailyQuota(userId);
     if (quota.remaining <= 0) return NextResponse.json({ error: `Has alcanzado el límite diario de ${MAX_DAILY_GENERATIONS} generaciones.` }, { status: 429 });
+    const slot = await acquireGeminiSlot();
+    if (!slot.acquired) {
+      return NextResponse.json({ error: `El planificador está atendiendo otra solicitud. Espera ${Math.ceil(slot.retryAfterMs / 1000)} segundos y vuelve a intentarlo.` }, { status: 429, headers: { "Retry-After": String(Math.ceil(slot.retryAfterMs / 1000)) } });
+    }
 
     const windows = (correcting ? [dayIndex] : dates.map((_, index) => index)).map((index) => ({ dayIndex: index, ...dayBounds(settings, index) }));
     const prompt = `Eres un experto local que diseña viajes en español.
@@ -58,7 +62,7 @@ ${correcting
   : '{"landmark":{"name":"nombre propio del monumento","description":"arquitectura característica"},"itinerary":[{"date":"YYYY-MM-DD","title":"...","mood":"...","stops":[{"time":"HH:mm","endTime":"HH:mm","activity":"...","place":"...","address":"..."}]}]}'}`;
 
     let feedback = "";
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < 2; attempt++) {
       let response: Response;
       try {
         response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
@@ -72,20 +76,21 @@ ${correcting
         });
       } catch (networkError) {
         // Timeouts and connection drops are transient; worth a retry before giving up.
-        if (attempt < 2) { await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1))); continue; }
+        if (attempt < 1) { await new Promise((resolve) => setTimeout(resolve, 1500)); continue; }
         console.error("Gemini request failed", networkError instanceof Error ? networkError.message : networkError);
         return NextResponse.json({ error: "Gemini ha tardado demasiado en responder. No se ha consumido cuota; inténtalo de nuevo en unos segundos." }, { status: 503 });
       }
       const result = await response.json().catch(() => ({}));
       if (!response.ok) {
-        if ([429, 500, 502, 503, 504].includes(response.status) && attempt < 2) {
-          await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+        if ([500, 502, 503, 504].includes(response.status) && attempt < 1) {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
           continue;
         }
         console.error("Gemini API error", response.status, JSON.stringify(result).slice(0, 500));
         const detail = isRecord(result) && isRecord(result.error) && typeof result.error.message === "string" ? result.error.message.slice(0, 200) : "";
         const modelIssue = response.status === 404 || response.status === 400;
-        const hint = modelIssue ? `El modelo "${model}" no está disponible con tu clave. Revisa la variable GEMINI_MODEL.` : "Inténtalo de nuevo en unos segundos.";
+        if (response.status === 429) return NextResponse.json({ error: "El servicio de IA ha alcanzado su cuota compartida. No es un problema de tu viaje: vuelve a intentarlo más tarde." }, { status: 503, headers: { "Retry-After": "60" } });
+        const hint = modelIssue ? `El modelo "${model}" no está disponible con tu clave. Revisa la variable GEMINI_MODEL.` : "Gemini está con alta demanda. Tu solicitud no ha consumido cuota; inténtalo de nuevo más tarde.";
         return NextResponse.json({ error: `Gemini no pudo generar la ruta (${response.status}). ${hint}${detail ? ` Detalle: ${detail}` : ""}` }, { status: 502 });
       }
       try {

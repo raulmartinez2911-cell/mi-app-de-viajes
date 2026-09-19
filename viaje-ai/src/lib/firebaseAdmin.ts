@@ -146,6 +146,22 @@ export async function incrementUserDailyGeneration(userId: string) {
   });
 }
 
+export async function acquireGeminiSlot() {
+  const db = getAdminDb();
+  const slotRef = db.collection("system").doc("geminiGenerationSlot");
+  const now = Date.now();
+  const minimumGapMs = 12_000;
+
+  return db.runTransaction(async (transaction) => {
+    const previous = (await transaction.get(slotRef)).data()?.lastRequestAt;
+    const lastRequestAt = typeof previous === "number" ? previous : 0;
+    const retryAfterMs = Math.max(0, minimumGapMs - (now - lastRequestAt));
+    if (retryAfterMs > 0) return { acquired: false, retryAfterMs };
+    transaction.set(slotRef, { lastRequestAt: now }, { merge: true });
+    return { acquired: true, retryAfterMs: 0 };
+  });
+}
+
 export async function saveUserItinerary(input: {
   userId: string;
   title: string;
