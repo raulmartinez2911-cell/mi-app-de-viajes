@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
-    const model = process.env.GEMINI_MODEL || "gemini-3.6-flash";
+    const model = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
     if (!apiKey || /pega_aqui|tu_clave/.test(apiKey)) {
       return NextResponse.json({ error: "Configura GEMINI_API_KEY en el servidor." }, { status: 503 });
     }
@@ -62,7 +62,8 @@ ${correcting
   : '{"landmark":{"name":"nombre propio del monumento","description":"arquitectura característica"},"itinerary":[{"date":"YYYY-MM-DD","title":"...","mood":"...","stops":[{"time":"HH:mm","endTime":"HH:mm","activity":"...","place":"...","address":"..."}]}]}'}`;
 
     let feedback = "";
-    for (let attempt = 0; attempt < 2; attempt++) {
+    const maxRetries = 3;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
       let response: Response;
       try {
         response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
@@ -72,25 +73,28 @@ ${correcting
             contents: [{ parts: [{ text: prompt + feedback }] }],
             generationConfig: { temperature: 0.5, responseMimeType: "application/json" },
           }),
-          signal: AbortSignal.timeout(18000),
+          signal: AbortSignal.timeout(10_000),
         });
       } catch (networkError) {
-        // Timeouts and connection drops are transient; worth a retry before giving up.
-        if (attempt < 1) { await new Promise((resolve) => setTimeout(resolve, 1500)); continue; }
+        // A dropped connection is usually transient, so it uses the same bounded backoff.
+        if (attempt < maxRetries) { await new Promise((resolve) => setTimeout(resolve, 2_000 * 2 ** attempt)); continue; }
         console.error("Gemini request failed", networkError instanceof Error ? networkError.message : networkError);
         return NextResponse.json({ error: "Gemini ha tardado demasiado en responder. No se ha consumido cuota; inténtalo de nuevo en unos segundos." }, { status: 503 });
       }
       const result = await response.json().catch(() => ({}));
       if (!response.ok) {
-        if ([500, 502, 503, 504].includes(response.status) && attempt < 1) {
-          await new Promise((resolve) => setTimeout(resolve, 1500));
+        if (response.status === 429) {
+          const retryAfter = response.headers.get("retry-after") || "60";
+          return NextResponse.json({ error: "El servicio de IA ha alcanzado su cuota compartida. No se ha iniciado ningún reintento; vuelve a intentarlo más tarde." }, { status: 429, headers: { "Retry-After": retryAfter } });
+        }
+        if ([500, 503].includes(response.status) && attempt < maxRetries) {
+          await new Promise((resolve) => setTimeout(resolve, 2_000 * 2 ** attempt));
           continue;
         }
         console.error("Gemini API error", response.status, JSON.stringify(result).slice(0, 500));
         const detail = isRecord(result) && isRecord(result.error) && typeof result.error.message === "string" ? result.error.message.slice(0, 200) : "";
         const modelIssue = response.status === 404 || response.status === 400;
-        if (response.status === 429) return NextResponse.json({ error: "El servicio de IA ha alcanzado su cuota compartida. No es un problema de tu viaje: vuelve a intentarlo más tarde." }, { status: 503, headers: { "Retry-After": "60" } });
-        const hint = modelIssue ? `El modelo "${model}" no está disponible con tu clave. Revisa la variable GEMINI_MODEL.` : "Gemini está con alta demanda. Tu solicitud no ha consumido cuota; inténtalo de nuevo más tarde.";
+        const hint = modelIssue ? `El modelo "${model}" no está disponible con tu clave. Revisa la variable GEMINI_MODEL.` : "Gemini sigue con alta demanda tras los reintentos automáticos. Tu solicitud no ha consumido cuota; inténtalo de nuevo más tarde.";
         return NextResponse.json({ error: `Gemini no pudo generar la ruta (${response.status}). ${hint}${detail ? ` Detalle: ${detail}` : ""}` }, { status: 502 });
       }
       try {
