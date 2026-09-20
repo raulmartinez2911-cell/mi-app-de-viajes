@@ -5,7 +5,7 @@ import { signIn, signOut, useSession } from "next-auth/react";
 import Link from "next/link";
 import worldCatalog from "@/data/world-catalog.json";
 import WorldMap from "./WorldMap";
-import { isRecord, parseSettings, replaceDay, tripDates, validateItinerary, type Day, type Landmark, type TripSettings } from "@/lib/itinerary";
+import { isRecord, parseSettings, replaceDay, tripDates, validateGeneralInfo, validateItinerary, type Day, type GeneralInfo, type Landmark, type TripSettings } from "@/lib/itinerary";
 
 const interests = ["Monumentos", "Spots fotográficos", "Cafeterías", "Foodies", "Museos", "Free tours", "Actividades", "Galerías de arte", "Vida nocturna", "Compras"];
 const initialSettings: TripSettings = {
@@ -13,9 +13,10 @@ const initialSettings: TripSettings = {
   country: "", city: "", destination: "",
   startDate: "", endDate: "", arrival: "", departure: "",
   hotel: "", budget: "", pace: "", interests: [], notes: "",
+  includePublicTransport: false,
 };
 type Screen = "home" | "planner" | "itinerary" | "trips";
-type CurrentTrip = { settings: TripSettings; itinerary: Day[]; landmark: Landmark | null; imageUrl: string; sourceImageUrl: string; savedId?: string };
+type CurrentTrip = { settings: TripSettings; itinerary: Day[]; landmark: Landmark | null; generalInfo: GeneralInfo | null; imageUrl: string; sourceImageUrl: string; savedId?: string };
 type SavedTrip = { id: string; title: string; destination: string; subtitle: string; trip: CurrentTrip | null; raw: Record<string, unknown>; completed: boolean };
 
 function dateLabel(date: string) {
@@ -34,6 +35,7 @@ function parseSavedTrip(raw: Record<string, unknown>): SavedTrip {
         landmark: isRecord(content.landmark) && typeof content.landmark.name === "string" && typeof content.landmark.description === "string" ? content.landmark as Landmark : null,
         imageUrl: typeof content.imageUrl === "string" && /^\/api\/place-image\?id=[a-f0-9]{64}$/.test(content.imageUrl) ? content.imageUrl : "",
         sourceImageUrl: typeof content.sourceImageUrl === "string" ? content.sourceImageUrl : "",
+        generalInfo: (() => { try { return validateGeneralInfo(content.generalInfo); } catch { return null; } })(),
       };
     }
   } catch { /* Keep legacy documents visible; require their missing dates before replanning. */ }
@@ -188,7 +190,7 @@ function TravelStudio({ userName }: { userName: string }) {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(snapshot),
       });
       if (!mounted.current) return;
-      const trip: CurrentTrip = { settings: snapshot, itinerary: validateItinerary(data.itinerary, snapshot), landmark: data.landmark, imageUrl: "", sourceImageUrl: safeImageUrl(catalogEntry(snapshot)?.imageUrl || "") };
+      const trip: CurrentTrip = { settings: snapshot, itinerary: validateItinerary(data.itinerary, snapshot), landmark: data.landmark, generalInfo: validateGeneralInfo(data.generalInfo), imageUrl: "", sourceImageUrl: safeImageUrl(catalogEntry(snapshot)?.imageUrl || "") };
       setCurrent(trip);
       setDayIndex(0); setAdjustment(""); setNotice("");
       setRemaining(data.remaining ?? null);
@@ -231,7 +233,7 @@ function TravelStudio({ userName }: { userName: string }) {
     try {
       const data = await jsonRequest("/api/itineraries", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...current.settings, content: { itinerary: current.itinerary, landmark: current.landmark, imageUrl: current.imageUrl, sourceImageUrl: current.sourceImageUrl } }),
+        body: JSON.stringify({ ...current.settings, content: { itinerary: current.itinerary, landmark: current.landmark, generalInfo: current.generalInfo, imageUrl: current.imageUrl, sourceImageUrl: current.sourceImageUrl } }),
       });
       if (!mounted.current) return;
       setCurrent((previous) => previous ? { ...previous, savedId: data.id } : previous);
@@ -343,6 +345,7 @@ function TravelStudio({ userName }: { userName: string }) {
           </div>
           <div className="choice-block"><span className="field-label">Quiero recomendaciones de...</span><div className="interest-grid">{interests.map((interest) => <button type="button" aria-pressed={settings.interests.includes(interest)} className={`interest ${settings.interests.includes(interest) ? "selected" : ""}`} key={interest} onClick={() => update("interests", settings.interests.includes(interest) ? settings.interests.filter((item) => item !== interest) : [...settings.interests, interest])}>{interest}<span aria-hidden="true">{settings.interests.includes(interest) ? "✓" : "+"}</span></button>)}</div></div>
           <div className="choice-block"><span className="field-label">Ritmo del viaje</span><div className="choices">{["Pausado", "Equilibrado", "Intenso"].map((option) => <button type="button" aria-pressed={settings.pace === option} className={`choice ${settings.pace === option ? "selected" : ""}`} key={option} onClick={() => update("pace", option)}>{option}</button>)}</div></div>
+          <label className="transport-toggle"><input type="checkbox" checked={settings.includePublicTransport} onChange={(event) => update("includePublicTransport", event.target.checked)} /><span>Incluir traslados con transporte público en los itinerarios diarios</span></label>
           <label className="field"><span>Un detalle para hacerlo tuyo <small>opcional</small></span><textarea value={settings.notes} onChange={(event) => update("notes", event.target.value)} placeholder="Ej. Me encantan los mercados, viajo con mi madre..." rows={3} maxLength={3000} /></label>
         </fieldset>
         <div className="quota-banner">Cuota diaria: {remaining === null ? "No disponible" : `${remaining} generaciones restantes de 5`}</div>
@@ -368,11 +371,12 @@ function TravelStudio({ userName }: { userName: string }) {
         <img className="destination-photo" src={current.sourceImageUrl} alt={`Imagen postal de ${current.settings.city}, ${current.settings.country}`} onError={() => { setCurrent((previous) => previous ? { ...previous, sourceImageUrl: "" } : previous); }} />
         <figcaption>{current.settings.city}, {current.settings.country} · Imagen postal del catálogo.</figcaption>
       </figure> : null}
+      {current.generalInfo && <section className="general-info-box"><span className="section-kicker">Información general</span><p><strong>Transporte:</strong> {current.generalInfo.publicTransport}</p><p><strong>Taxi:</strong> {current.generalInfo.taxiApps}</p><div className="general-info-columns"><div><h3>Restaurantes</h3><ul>{current.generalInfo.restaurants.map((item) => <li key={item.name}><strong>{item.name}</strong><span>{item.description}</span></li>)}</ul></div><div><h3>Platos típicos</h3><ul>{current.generalInfo.dishes.map((item) => <li key={item.name}><strong>{item.name}</strong><span>{item.description}</span></li>)}</ul></div></div><p><strong>Moneda:</strong> {current.generalInfo.currency}. {current.generalInfo.euroConversion}</p></section>}
       <div className="day-list">{current.itinerary.map((day, index) => <article className="day-card" key={day.date}>
         <div className="day-marker"><span>{String(index + 1).padStart(2, "0")}</span><div /></div>
         <div className="day-content">
           <div className="day-title"><div><span>{day.day} · {dateLabel(day.date)}</span><h3>{day.title}</h3><p>{day.mood}</p></div></div>
-          {day.stops.length ? <ul>{day.stops.map((stop, stopIndex) => <li key={`${stop.time}-${stopIndex}`}><b>{stop.time}–{stop.endTime}</b><span>{stop.activity}{stop.place && <small className="stop-place">{stop.place}{stop.address ? ` · ${stop.address}` : ""}</small>}</span></li>)}</ul> : <p className="empty-state">Sin actividades programadas en este tramo. Se respeta tu horario de llegada o salida.</p>}
+          {day.stops.length ? <ul>{day.stops.map((stop, stopIndex) => <li key={`${stop.time}-${stopIndex}`}><b>{stop.time}–{stop.endTime}</b><span>{stop.activity}{stop.place && <small className="stop-place">{stop.place}{stop.address ? ` · ${stop.address}` : ""}</small>}{(stop.transportType || stop.station || stop.estimatedCost) && <small className="stop-place transport-detail">{stop.transportType || "Traslado"}{stop.station ? ` · Estación: ${stop.station}` : ""}{stop.estimatedCost ? ` · Billete aprox.: ${stop.estimatedCost}` : ""}</small>}</span></li>)}</ul> : <p className="empty-state">Sin actividades programadas en este tramo. Se respeta tu horario de llegada o salida.</p>}
           {day.stops.length > 0 && <DayMap day={day} settings={current.settings} />}
         </div>
       </article>)}</div>

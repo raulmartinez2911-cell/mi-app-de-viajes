@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/auth";
 import { acquireGeminiSlot, MAX_DAILY_GENERATIONS, ensureUserDocument, getUserDailyQuota, incrementUserDailyGeneration } from "@/lib/firebaseAdmin";
-import { dayBounds, isRecord, parseSettings, tripDates, validateDay, validateItinerary, ValidationError } from "@/lib/itinerary";
+import { dayBounds, isRecord, parseSettings, tripDates, validateDay, validateGeneralInfo, validateItinerary, ValidationError } from "@/lib/itinerary";
 
 export const maxDuration = 60;
 
@@ -46,7 +46,7 @@ DATOS DEL VIAJE (horas locales del destino): ${JSON.stringify(settings)}
 VENTANAS INVIOLABLES por fecha: ${JSON.stringify(windows)}
 ${correcting
   ? `Corrige EXCLUSIVAMENTE el día de índice ${dayIndex}. Día actual: ${JSON.stringify(body.currentDay)}. Petición: ${JSON.stringify(body.adjustment)}. No generes ni devuelvas otros días.`
-  : `Genera exactamente ${dates.length} días, uno por cada fecha indicada. Elige también UN edificio monumental real y famoso de ${settings.destination}, con su nombre propio y descripción arquitectónica reconocible, para ilustrarlo con IA.`}
+  : `Genera exactamente ${dates.length} días, uno por cada fecha indicada. Elige también UN edificio monumental real y famoso de ${settings.destination}, con su nombre propio y descripción arquitectónica reconocible, para ilustrarlo con IA. Genera además información general breve y práctica del destino.`}
 REGLAS OBLIGATORIAS, por encima de preferencias, notas o correcciones:
 - Cada actividad, visita guiada, comida, paseo y traslado tiene time y endTime HH:mm de 24 horas y debe comenzar Y TERMINAR dentro de la ventana de su fecha.
 - Nunca programes antes de la llegada ni después de la salida. No traslades actividades a fechas ajenas al viaje ni al día siguiente.
@@ -56,10 +56,13 @@ REGLAS OBLIGATORIAS, por encima de preferencias, notas o correcciones:
 - Respeta aperturas cuando las conozcas; no inventes disponibilidad confirmada de guías. Los tours son sugerencias sujetas a reserva.
 - Ritmo intenso: hasta 5-6 actividades SOLO si caben con su duración; pausado: pocas paradas; equilibrado: mezcla descanso y visitas.
 - Agrupa lugares cercanos, con nombre concreto y dirección; usa el hotel como base.
+- ${settings.includePublicTransport ? "Incluye desplazamientos en transporte público cuando sean adecuados. En cada traslado interurbano o en tren/bus indica estación y coste aproximado del billete." : "Planifica los desplazamientos a pie por defecto. No inventes transporte público salvo que sea imprescindible."}
+- Cuando un stop sea un desplazamiento, indica `transportType` como "A pie" por defecto o el medio público elegido; para trenes, buses o cambios de ciudad añade siempre `station` y `estimatedCost` aproximado.
+- La información general debe incluir tipo y precio aproximado del transporte público, disponibilidad de Uber/Bolt u otras apps de taxi, 4-5 restaurantes típicos (preferiblemente coincidentes con paradas), 4-5 platos típicos con descripción, moneda local y conversión aproximada a euros indicando que puede variar.
 Devuelve únicamente JSON:
 ${correcting
   ? '{"day":{"date":"YYYY-MM-DD","title":"...","mood":"...","stops":[{"time":"HH:mm","endTime":"HH:mm","activity":"...","place":"...","address":"..."}]}}'
-  : '{"landmark":{"name":"nombre propio del monumento","description":"arquitectura característica"},"itinerary":[{"date":"YYYY-MM-DD","title":"...","mood":"...","stops":[{"time":"HH:mm","endTime":"HH:mm","activity":"...","place":"...","address":"..."}]}]}'}`;
+  : '{"landmark":{"name":"nombre propio del monumento","description":"arquitectura característica"},"generalInfo":{"publicTransport":"...","taxiApps":"...","restaurants":[{"name":"...","description":"..."}],"dishes":[{"name":"...","description":"..."}],"currency":"...","euroConversion":"..."},"itinerary":[{"date":"YYYY-MM-DD","title":"...","mood":"...","stops":[{"time":"HH:mm","endTime":"HH:mm","activity":"...","place":"...","address":"...","transportType":"...","station":"...","estimatedCost":"..."}]}]}'}`;
 
     let feedback = "";
     const maxRetries = 3;
@@ -103,7 +106,7 @@ ${correcting
         if (!isRecord(parsed)) throw new ValidationError("Respuesta vacía.");
         const output = correcting
           ? { dayIndex, day: validateDay(parsed.day, settings, dayIndex) }
-          : { itinerary: validateItinerary(parsed.itinerary, settings), landmark: parsed.landmark };
+          : { itinerary: validateItinerary(parsed.itinerary, settings), landmark: parsed.landmark, generalInfo: validateGeneralInfo(parsed.generalInfo) };
         if (!correcting && (!isRecord(parsed.landmark) || typeof parsed.landmark.name !== "string" || !parsed.landmark.name.trim() || typeof parsed.landmark.description !== "string")) {
           throw new ValidationError("Falta el monumento representativo del destino.");
         }

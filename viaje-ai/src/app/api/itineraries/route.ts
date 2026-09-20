@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/auth";
 import worldCatalog from "@/data/world-catalog.json";
 import { deleteUserItinerary, listUserItineraries, saveUserItinerary, updateUserItineraryStatus } from "@/lib/firebaseAdmin";
-import { isRecord, parseSettings, tripDates, validateItinerary, ValidationError } from "@/lib/itinerary";
+import { isRecord, parseSettings, tripDates, validateGeneralInfo, validateItinerary, ValidationError } from "@/lib/itinerary";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -24,6 +24,7 @@ export async function POST(request: Request) {
     const settings = parseSettings(body);
     if (!isRecord(body) || !isRecord(body.content)) throw new ValidationError("Falta el itinerario.");
     const itinerary = validateItinerary(body.content.itinerary, settings);
+    const generalInfo = validateGeneralInfo(body.content.generalInfo);
     const landmark = isRecord(body.content.landmark)
       ? { name: String(body.content.landmark.name ?? "").slice(0, 200), description: String(body.content.landmark.description ?? "").slice(0, 1500) }
       : null;
@@ -33,7 +34,7 @@ export async function POST(request: Request) {
     const result = await saveUserItinerary({
       ...settings, userId: session.user.id, title: settings.city,
       duration: tripDates(settings).length,
-      content: { itinerary, settings, landmark, imageUrl, sourceImageUrl },
+      content: { itinerary, settings, landmark, generalInfo, imageUrl, sourceImageUrl },
     });
     return NextResponse.json({ id: result.id }, { status: 201 });
   } catch (error) {
