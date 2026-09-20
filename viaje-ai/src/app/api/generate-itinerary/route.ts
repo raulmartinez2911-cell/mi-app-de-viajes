@@ -57,7 +57,7 @@ REGLAS OBLIGATORIAS, por encima de preferencias, notas o correcciones:
 - Ritmo intenso: hasta 5-6 actividades SOLO si caben con su duración; pausado: pocas paradas; equilibrado: mezcla descanso y visitas.
 - Agrupa lugares cercanos, con nombre concreto y dirección; usa el hotel como base.
 - ${settings.includePublicTransport ? "Incluye desplazamientos en transporte público cuando sean adecuados. En cada traslado interurbano o en tren/bus indica estación y coste aproximado del billete." : "Planifica los desplazamientos a pie por defecto. No inventes transporte público salvo que sea imprescindible."}
-- Cuando un stop sea un desplazamiento, indica `transportType` como "A pie" por defecto o el medio público elegido; para trenes, buses o cambios de ciudad añade siempre `station` y `estimatedCost` aproximado.
+- Cuando un stop sea un desplazamiento, indica transportType como "A pie" por defecto o el medio público elegido; para trenes, buses o cambios de ciudad añade siempre station y estimatedCost aproximado.
 - La información general debe incluir tipo y precio aproximado del transporte público, disponibilidad de Uber/Bolt u otras apps de taxi, 4-5 restaurantes típicos (preferiblemente coincidentes con paradas), 4-5 platos típicos con descripción, moneda local y conversión aproximada a euros indicando que puede variar.
 Devuelve únicamente JSON:
 ${correcting
