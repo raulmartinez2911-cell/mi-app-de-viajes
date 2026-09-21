@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { signIn, signOut, useSession } from "next-auth/react";
 import Link from "next/link";
+import Image from "next/image";
 import worldCatalog from "@/data/world-catalog.json";
 import WorldMap from "./WorldMap";
 import { isRecord, parseSettings, replaceDay, tripDates, validateGeneralInfo, validateItinerary, type Day, type GeneralInfo, type Landmark, type TripSettings } from "@/lib/itinerary";
@@ -70,16 +71,26 @@ function PlaneSpinner() {
 }
 function Landing({ authenticated, loading, onContinue }: { authenticated: boolean; loading?: boolean; onContinue: () => void }) {
   return <section className="intro landing-screen" id="top">
-    <div className="eyebrow"><span /> Planificador inteligente de viajes</div>
-    <h1>Tu próxima ruta,<br /><em>bien trazada.</em></h1>
-    <p className="intro-copy">Destinos, paseos y sobremesas pensados con calma. Diseña el viaje; Gemini se ocupa de unir los puntos.</p>
-    <button className="submit-button landing-cta" onClick={onContinue} disabled={loading}>{loading ? "Cargando sesión..." : authenticated ? "Diseñar mi viaje" : "Iniciar sesión con Google"}<span aria-hidden="true">↗</span></button>
-    <p className="landing-note">{authenticated ? "Tus viajes guardados te esperan en Mis viajes." : "Accede con Google para planificar y guardar tus rutas en tu cuenta."}</p>
-    <div className="intro-stats"><span><strong>01</strong> destino elegido</span><span><strong>∞</strong> formas de viajar</span></div>
+    <div className="landing-video" aria-hidden="true"><video autoPlay muted loop playsInline poster="/Rumbo.png"><source src="/SVD-img2vid_video.mp4" type="video/mp4" /></video><div className="landing-video-shade" /></div>
+    <div className="landing-content">
+      <Image className="landing-logo" src="/Rumbo.png" alt="Rumbo" width={1200} height={183} priority />
+      <div className="eyebrow"><span /> Planificador inteligente de viajes</div>
+      <h1>Tu próxima ruta,<br /><em>bien trazada.</em></h1>
+      <p className="intro-copy">Destinos, paseos y sobremesas pensados con calma. Diseña el viaje; Gemini se ocupa de unir los puntos.</p>
+      <button className="submit-button landing-cta" onClick={onContinue} disabled={loading}>{loading ? "Cargando sesión..." : authenticated ? "Diseñar mi viaje" : "Iniciar sesión con Google"}<span aria-hidden="true">↗</span></button>
+      <p className="landing-note">{authenticated ? "Tus viajes guardados te esperan en Mis viajes." : "Accede con Google para planificar y guardar tus rutas en tu cuenta."}</p>
+      <div className="intro-stats"><span><strong>01</strong> destino elegido</span><span><strong>∞</strong> formas de viajar</span></div>
+    </div>
   </section>;
 }
 function Footer() {
   return <footer><span>ruta / AI</span><span>Para curiosos, caminantes y sobremesas largas.</span><span>© 2026</span></footer>;
+}
+function savedTripImage(trip: SavedTrip) {
+  return trip.trip?.sourceImageUrl || trip.trip?.imageUrl || "";
+}
+function savedTripColor(index: number) {
+  return ["#f8bf68", "#8bc8c2", "#e78c7e", "#9db8e7", "#c7a2d8"][index % 5];
 }
 export default function Home() {
   const { data: session, status } = useSession();
@@ -398,11 +409,13 @@ function TravelStudio({ userName }: { userName: string }) {
       {libraryError && <div role="alert" className="error-message feedback-banner">{libraryError}<button className="back-button" onClick={() => void loadTrips()}>Reintentar carga</button></div>}
       {!libraryLoading && !libraryError && savedTrips.length === 0 && <p className="empty-state">Todavía no tienes viajes guardados. Pulsa el corazón de un itinerario para añadirlo.</p>}
       {tripSection === "completed" && <section className="visited-section"><div className="visited-stats"><strong>{visitedCountries.length}</strong><span>países visitados</span><b>{Math.round((visitedCountries.length / 195) * 100)}%</b><span>del mundo</span></div><WorldMap visited={visitedCountries} onAddCountry={(country) => void addManualCountry(country)} /><div className="manual-country"><label className="field"><span>Añadir un país visitado anteriormente</span><select value={manualCountry} onChange={(event) => setManualCountry(event.target.value)}><option value="">-- Selecciona un país --</option>{availableManualCountries.filter((country) => !manualVisitedCountries.includes(country)).map((country) => <option key={country}>{country}</option>)}</select></label><button className="back-button" onClick={() => void addManualCountry()} disabled={!manualCountry}>Añadir país</button></div></section>}
-      <div className="modal-trip-list">{savedTrips.filter((trip) => trip.completed === (tripSection === "completed")).map((trip) => <article className="modal-trip-row" key={trip.id}><div><span aria-hidden="true">✦</span><strong>{trip.title}</strong><small>{trip.subtitle}</small><p>{trip.destination}</p>{!trip.trip && <p>Versión antigua: faltan fechas u horarios completos.</p>}</div><div className="modal-trip-actions">
-        <button onClick={() => openTrip(trip)} disabled={Boolean(deletingId)}>{trip.trip ? "Ver viaje ↗" : "Completar datos ↗"}</button>
-        <label className="status-check"><input type="checkbox" checked={trip.completed} onChange={(event) => void setTripCompleted(trip, event.target.checked)} /> Realizado</label>
-        {deleteCandidate === trip.id ? <><button className="delete-button" disabled={Boolean(deletingId)} onClick={() => void deleteTrip(trip.id)}>{deletingId === trip.id ? "Borrando..." : "Confirmar borrado"}</button><button disabled={Boolean(deletingId)} onClick={() => setDeleteCandidate("")}>Cancelar</button></> : <button className="delete-button" disabled={Boolean(deletingId)} onClick={() => setDeleteCandidate(trip.id)} aria-label={`Borrar viaje a ${trip.title}`}>Borrar</button>}
-      </div></article>)}</div>
+      <div className="trip-card-grid">{savedTrips.filter((trip) => trip.completed === (tripSection === "completed")).map((trip, index) => {
+        const image = savedTripImage(trip);
+        return <article className="trip-card" key={trip.id} style={{ "--trip-color": savedTripColor(index) } as React.CSSProperties}>
+          <div className="trip-card-visual" style={image ? { backgroundImage: `url("${image}")` } : undefined}><span>{trip.completed ? "Realizado" : "Pendiente"}</span></div>
+          <div className="trip-card-body"><small>{trip.subtitle}</small><h3>{trip.title}</h3><p>{trip.destination}</p>{!trip.trip && <p>Versión antigua: faltan fechas u horarios completos.</p>}<div className="trip-card-actions"><button onClick={() => openTrip(trip)} disabled={Boolean(deletingId)}>{trip.trip ? "Ver viaje ↗" : "Completar datos ↗"}</button><label className="status-check"><input type="checkbox" checked={trip.completed} onChange={(event) => void setTripCompleted(trip, event.target.checked)} /> Realizado</label>{deleteCandidate === trip.id ? <><button className="delete-button" disabled={Boolean(deletingId)} onClick={() => void deleteTrip(trip.id)}>{deletingId === trip.id ? "Borrando..." : "Confirmar borrado"}</button><button disabled={Boolean(deletingId)} onClick={() => setDeleteCandidate("")}>Cancelar</button></> : <button className="delete-button" disabled={Boolean(deletingId)} onClick={() => setDeleteCandidate(trip.id)} aria-label={`Borrar viaje a ${trip.title}`}>Borrar</button>}</div></div>
+        </article>;
+      })}</div>
     </section>}
     <Footer />
   </main>;
