@@ -42,7 +42,7 @@ h2[tabindex="-1"]:focus { outline: none; }
 .plane-spinner { display: inline-grid; place-items: center; width: 24px; height: 24px; animation: plane-orbit 1.15s linear infinite; }
 .plane-spinner span { display: block; font-size: 21px !important; line-height: 1; }
 @keyframes plane-orbit { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-.landing-cta { max-width: 380px; margin-top: 32px; }
+.landing-cta { max-width: 380px; margin: 32px auto 0; }
 .landing-note, .schedule-help, .library-copy { color: var(--muted); font-size: 12px; line-height: 1.7; }
 .landing-note { max-width: 400px; }
 .intro-stats { border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 30px; justify-content: center; margin: 32px auto 0; max-width: 430px; padding-top: 14px; }
@@ -52,7 +52,7 @@ h2[tabindex="-1"]:focus { outline: none; }
 .back-button, .delete-button, .modal-trip-actions button { border: 1px solid var(--line); border-radius: 8px; color: var(--leaf); background: var(--ocean); font-size: 12px; padding: 11px 14px; min-height: 44px; }
 .back-button:hover:not(:disabled) { background: #c4e4e5; }
 .planner-screen { width: 100%; max-width: 1540px; margin: 0 auto; padding-bottom: 80px; }
-.planner-card { background: #fff; border: 1px solid #d7e3e5; border-radius: 24px; box-shadow: 0 22px 60px rgba(18, 98, 119, .1); margin: 0 auto; max-width: 1180px; padding: clamp(24px, 4vw, 52px); }
+.planner-card { background: #fff; border: 1px solid #d7e3e5; border-radius: 28px; box-shadow: 0 22px 60px rgba(18, 98, 119, .1); margin: 0; max-width: none; padding: clamp(24px, 4vw, 52px); }
 .card-heading, .panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
 .card-heading h2 { font-size: 30px; letter-spacing: -.05em; margin: 9px 0 30px; }
 .sparkle { color: var(--coral); font-size: 24px; }
