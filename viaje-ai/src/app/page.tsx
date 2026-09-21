@@ -72,8 +72,7 @@ function PlaneSpinner() {
 function Landing({ authenticated, loading, onContinue }: { authenticated: boolean; loading?: boolean; onContinue: () => void }) {
   return <section className="intro landing-screen" id="top">
     <div className="landing-content">
-      <div className="landing-video" aria-hidden="true"><video autoPlay muted loop playsInline poster="/Rumbo.png"><source src="/SVD-img2vid_video.mp4" type="video/mp4" /></video></div>
-      <Image className="landing-logo" src="/Rumbo.png" alt="Rumbo" width={1200} height={183} priority />
+      <div className="landing-brand-media"><Image className="landing-map" src="/mapa-mundi.png" alt="Mapa mundial ilustrado" width={900} height={900} priority /><Image className="landing-logo" src="/Rumbo.png" alt="Rumbo" width={1200} height={183} priority /></div>
       <div className="eyebrow"><span /> Planificador inteligente de viajes</div>
       <h1>Tu próxima ruta,<br /><em>bien trazada.</em></h1>
       <p className="intro-copy">Destinos, paseos y sobremesas pensados con calma. Diseña el viaje; Gemini se ocupa de unir los puntos.</p>

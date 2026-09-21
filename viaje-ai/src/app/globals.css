@@ -28,10 +28,9 @@ h2[tabindex="-1"]:focus { outline: none; }
 .landing-screen { align-items: center; display: grid; min-height: calc(100dvh - 80px); padding: clamp(34px, 5vw, 76px) 0 88px; position: relative; }
 .landing-content { background: #fff; border: 1px solid #d7e3e5; border-radius: 28px; box-shadow: 0 24px 64px rgba(18, 98, 119, .12); color: var(--ink); max-width: 1540px; padding: clamp(30px, 5vw, 72px); position: relative; text-align: center; width: 100%; z-index: 1; }
 .landing-content .intro-copy, .landing-content .landing-note, .landing-content .intro-stats span { color: var(--muted); margin-left: auto; margin-right: auto; }
-.landing-video { border-radius: 22px; box-shadow: 0 16px 34px rgba(0,0,0,.12); margin: 0 auto 30px; max-width: 420px; overflow: hidden; position: relative; width: min(42vw, 420px); }
-.landing-video::after { border: 1px solid rgba(255,255,255,.3); border-radius: inherit; content: ""; inset: 0; pointer-events: none; position: absolute; }
-.landing-video video { aspect-ratio: 1 / 1; display: block; height: auto; object-fit: cover; width: 100%; }
-.landing-logo { display: block; margin: 0 auto 26px; max-width: 340px; width: min(42vw, 340px); }
+.landing-brand-media { align-items: center; display: flex; gap: clamp(18px, 4vw, 64px); justify-content: center; margin: 0 auto 34px; max-width: 920px; }
+.landing-map { display: block; height: auto; max-width: 420px; width: min(34vw, 420px); }
+.landing-logo { display: block; max-width: 540px; width: min(48vw, 540px); }
 .intro h1 { font-size: clamp(52px, 8vw, 108px); font-weight: 700; letter-spacing: -.075em; line-height: .98; margin: 23px 0 26px; }
 .intro h1 em { color: var(--leaf); font-family: "Playfair Display", serif; font-weight: 600; }
 .intro-copy { color: var(--muted); font-size: 16px; line-height: 1.8; max-width: 520px; }
@@ -244,8 +243,9 @@ footer span:first-child { color: var(--ink); }
   .intro h1 { font-size: clamp(44px, 12vw, 72px); }
   .landing-screen { padding: 64px 0 54px; }
   .landing-content { border-radius: 22px; padding: 28px 20px 34px; }
-  .landing-video { border-radius: 14px; margin-bottom: 24px; width: min(68vw, 300px); }
-  .landing-logo { margin-bottom: 22px; width: min(68vw, 300px); }
+  .landing-brand-media { align-items: center; gap: 14px; margin-bottom: 28px; }
+  .landing-map { width: 42%; }
+  .landing-logo { width: 52%; }
   .eyebrow { font-size: 9px; }
   .screen-toolbar { flex-wrap: wrap; padding: 22px 0; }
   .screen-toolbar .section-kicker { font-size: 9px; }
