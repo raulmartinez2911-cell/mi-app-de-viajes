@@ -3,7 +3,7 @@
 
 :root { --ink: #173042; --muted: #5f7480; --line: #d7e3e5; --cream: #edf5f7; --paper: #fff; --leaf: #126277; --coral: #ed7659; --ocean: #d8f1f1; --sand: #fff0d9; }
 * { box-sizing: border-box; }
-body { margin: 0; background: linear-gradient(135deg, #eef7fb 0%, #fff4e5 52%, #e5f5f1 100%); color: var(--ink); font-family: "Manrope", sans-serif; }
+body { margin: 0; background: #fff; color: var(--ink); font-family: "Manrope", sans-serif; }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; transition: background .18s, border-color .18s, box-shadow .18s; }
 button:disabled { cursor: default; opacity: .6; }
@@ -26,15 +26,14 @@ h2[tabindex="-1"]:focus { outline: none; }
 .eyebrow { display: flex; align-items: center; gap: 10px; }
 .eyebrow span { background: var(--coral); height: 1px; width: 38px; flex-shrink: 0; }
 .landing-screen { align-items: center; display: grid; min-height: calc(100dvh - 80px); padding: clamp(34px, 5vw, 76px) 0 88px; position: relative; }
-.landing-content { background: linear-gradient(135deg, #126277 0%, #257c8d 48%, #ed7659 150%); border-radius: 32px; box-shadow: 0 26px 70px rgba(18, 98, 119, .22); color: white; max-width: 1040px; padding: clamp(30px, 5vw, 72px); position: relative; width: 100%; z-index: 1; }
-.landing-content .intro-copy, .landing-content .landing-note, .landing-content .intro-stats span { color: rgba(255,255,255,.88); }
-.landing-brand-media { align-items: center; display: flex; gap: clamp(20px, 5vw, 72px); justify-content: space-between; margin: 0 auto clamp(34px, 5vw, 64px); max-width: 820px; }
-.landing-logo { display: block; filter: brightness(0) invert(1); max-width: min(360px, 48%); width: 44%; }
-.landing-video { border-radius: 22px; box-shadow: 0 16px 34px rgba(0,0,0,.2); overflow: hidden; position: relative; width: min(310px, 34vw); }
+.landing-content { background: #fff; border: 1px solid #d7e3e5; border-radius: 28px; box-shadow: 0 24px 64px rgba(18, 98, 119, .12); color: var(--ink); max-width: 1540px; padding: clamp(30px, 5vw, 72px); position: relative; text-align: center; width: 100%; z-index: 1; }
+.landing-content .intro-copy, .landing-content .landing-note, .landing-content .intro-stats span { color: var(--muted); margin-left: auto; margin-right: auto; }
+.landing-video { border-radius: 22px; box-shadow: 0 16px 34px rgba(0,0,0,.12); margin: 0 auto 30px; max-width: 420px; overflow: hidden; position: relative; width: min(42vw, 420px); }
 .landing-video::after { border: 1px solid rgba(255,255,255,.3); border-radius: inherit; content: ""; inset: 0; pointer-events: none; position: absolute; }
 .landing-video video { aspect-ratio: 1 / 1; display: block; height: auto; object-fit: cover; width: 100%; }
+.landing-logo { display: block; margin: 0 auto 26px; max-width: 340px; width: min(42vw, 340px); }
 .intro h1 { font-size: clamp(52px, 8vw, 108px); font-weight: 700; letter-spacing: -.075em; line-height: .98; margin: 23px 0 26px; }
-.intro h1 em { color: #ffd176; font-family: "Playfair Display", serif; font-weight: 600; }
+.intro h1 em { color: var(--leaf); font-family: "Playfair Display", serif; font-weight: 600; }
 .intro-copy { color: var(--muted); font-size: 16px; line-height: 1.8; max-width: 520px; }
 .submit-button { display: flex; align-items: center; justify-content: space-between; gap: 16px; background: var(--coral); border: 0; border-radius: 10px; color: white; font-size: 13px; font-weight: 700; box-shadow: 0 8px 20px #ed745830; padding: 17px 18px; width: 100%; }
 .submit-button:hover:not(:disabled) { background: #bb4c36; }
@@ -47,14 +46,14 @@ h2[tabindex="-1"]:focus { outline: none; }
 .landing-cta { max-width: 380px; margin-top: 32px; }
 .landing-note, .schedule-help, .library-copy { color: var(--muted); font-size: 12px; line-height: 1.7; }
 .landing-note { max-width: 400px; }
-.intro-stats { border-top-color: rgba(255,255,255,.35); display: flex; flex-wrap: wrap; gap: 30px; margin-top: 32px; padding-top: 14px; }
+.intro-stats { border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 30px; justify-content: center; margin: 32px auto 0; max-width: 430px; padding-top: 14px; }
 .intro-stats span { color: var(--muted); font: 10px "DM Mono", monospace; text-transform: uppercase; }
-.intro-stats strong { color: #ffd176; font: 700 18px "Manrope", sans-serif; margin-right: 5px; }
+.intro-stats strong { color: var(--coral); font: 700 18px "Manrope", sans-serif; margin-right: 5px; }
 .screen-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 28px 0; }
 .back-button, .delete-button, .modal-trip-actions button { border: 1px solid var(--line); border-radius: 8px; color: var(--leaf); background: var(--ocean); font-size: 12px; padding: 11px 14px; min-height: 44px; }
 .back-button:hover:not(:disabled) { background: #c4e4e5; }
-.planner-screen { width: 100%; max-width: 1180px; margin: 0 auto; padding-bottom: 80px; }
-.planner-card { background: rgba(255,255,255,.9); border: 1px solid #0d52631f; border-radius: 24px; box-shadow: 0 22px 60px #0d526314; padding: clamp(24px, 4vw, 52px); }
+.planner-screen { width: 100%; max-width: 1540px; margin: 0 auto; padding-bottom: 80px; }
+.planner-card { background: #fff; border: 1px solid #d7e3e5; border-radius: 24px; box-shadow: 0 22px 60px rgba(18, 98, 119, .1); margin: 0 auto; max-width: 1180px; padding: clamp(24px, 4vw, 52px); }
 .card-heading, .panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
 .card-heading h2 { font-size: 30px; letter-spacing: -.05em; margin: 9px 0 30px; }
 .sparkle { color: var(--coral); font-size: 24px; }
@@ -245,9 +244,8 @@ footer span:first-child { color: var(--ink); }
   .intro h1 { font-size: clamp(44px, 12vw, 72px); }
   .landing-screen { padding: 64px 0 54px; }
   .landing-content { border-radius: 22px; padding: 28px 20px 34px; }
-  .landing-brand-media { align-items: flex-start; gap: 18px; margin-bottom: 34px; }
-  .landing-logo { max-width: 48%; width: 48%; }
-  .landing-video { border-radius: 14px; width: 42%; }
+  .landing-video { border-radius: 14px; margin-bottom: 24px; width: min(68vw, 300px); }
+  .landing-logo { margin-bottom: 22px; width: min(68vw, 300px); }
   .eyebrow { font-size: 9px; }
   .screen-toolbar { flex-wrap: wrap; padding: 22px 0; }
   .screen-toolbar .section-kicker { font-size: 9px; }
