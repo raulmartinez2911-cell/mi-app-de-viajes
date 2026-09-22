@@ -110,8 +110,19 @@ export function validateDay(value: unknown, window: TripWindow, index: number): 
 }
 export function validateItinerary(value: unknown, window: TripWindow): Day[] {
   const dates = tripDates(window);
-  if (!Array.isArray(value) || value.length !== dates.length) throw new ValidationError("El itinerario debe incluir exactamente las fechas del viaje.");
-  return value.map((day, index) => validateDay(day, window, index));
+  if (!Array.isArray(value)) throw new ValidationError("El itinerario debe ser una lista de días.");
+  const byDate = new Map<string, unknown>();
+  for (const raw of value) {
+    if (isRecord(raw) && typeof raw.date === "string" && !byDate.has(raw.date)) byDate.set(raw.date, raw);
+  }
+  // Never discard a coherent trip for one missing/malformed day: fill it with a safe placeholder instead.
+  return dates.map((date, index) => {
+    const raw = byDate.get(date);
+    if (raw !== undefined) {
+      try { return validateDay(raw, window, index); } catch { /* fall through to placeholder */ }
+    }
+    return { day: `Día ${String(index + 1).padStart(2, "0")}`, date, title: "Día libre / Desplazamiento", mood: "Sin planes asignados por la IA para esta fecha.", stops: [] };
+  });
 }
 export function replaceDay(current: Day[], replacement: unknown, window: TripWindow, index: number): Day[] {
   if (current.length !== tripDates(window).length) throw new ValidationError("El itinerario no coincide con las fechas del viaje.");

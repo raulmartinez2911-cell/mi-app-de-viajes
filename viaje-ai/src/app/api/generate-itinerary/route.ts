@@ -75,7 +75,7 @@ export async function POST(request: Request) {
   VENTANAS HORARIAS OBLIGATORIAS: ${JSON.stringify(windows)}
 ${correcting
   ? `Corrige EXCLUSIVAMENTE el día de índice ${dayIndex}. Día actual: ${JSON.stringify(body.currentDay)}. Petición: ${JSON.stringify(body.adjustment)}. No generes ni devuelvas otros días.`
-  : `Genera exactamente ${dates.length} días, uno por cada fecha indicada. Elige también UN edificio monumental real y famoso de ${settings.destination}, con su nombre propio y descripción arquitectónica reconocible, para ilustrarlo con IA.`}
+  : `Debes devolver el array "itinerary" con EXACTAMENTE ${dates.length} elementos, uno por cada fecha de esta lista, asignando rigurosamente cada fecha en el mismo orden al campo "date" (formato YYYY-MM-DD): ${JSON.stringify(dates)}. Ninguna fecha puede repetirse, faltar ni salirse de esta lista. Elige también UN edificio monumental real y famoso de ${settings.destination}, con su nombre propio y descripción arquitectónica reconocible, para ilustrarlo con IA.`}
 REGLAS:
 - Cada actividad, visita guiada, comida, paseo y traslado tiene time y endTime HH:mm de 24 horas y debe comenzar Y TERMINAR dentro de la ventana de su fecha.
 - Nunca programes antes de la llegada ni después de la salida. No traslades actividades a fechas ajenas al viaje ni al día siguiente.
@@ -87,6 +87,7 @@ REGLAS:
 - Agrupa lugares cercanos, con nombre concreto y dirección; usa el hotel como base.
 - ${settings.includePublicTransport ? "Incluye desplazamientos en transporte público cuando sean adecuados. En cada traslado interurbano o en tren/bus indica estación y coste aproximado del billete." : "Planifica los desplazamientos a pie por defecto. No inventes transporte público salvo que sea imprescindible."}
 - Cuando un stop sea un desplazamiento, indica transportType como "A pie" por defecto o el medio público elegido; para trenes, buses o cambios de ciudad añade siempre station y estimatedCost aproximado.
+- Si en las notas del usuario se pide visitar una ciudad o lugar externo (por ejemplo Cuzco o Machu Picchu partiendo de Lima), integra esa excursión dentro de la secuencia diaria de fechas indicada, sin añadir, quitar ni reordenar fechas: usa uno o varios de los días ya listados para esa excursión.
 FORMATO JSON ÚNICO:
 ${correcting
   ? '{"day":{"date":"YYYY-MM-DD","title":"...","mood":"...","stops":[{"time":"HH:mm","endTime":"HH:mm","activity":"...","place":"...","address":"..."}]}}'
