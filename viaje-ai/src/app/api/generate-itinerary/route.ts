@@ -4,7 +4,7 @@ import { authOptions } from "@/auth";
 import { acquireGeminiSlot, MAX_DAILY_GENERATIONS, ensureUserDocument, getUserDailyQuota, incrementUserDailyGeneration } from "@/lib/firebaseAdmin";
 import { dayBounds, isRecord, parseSettings, tripDates, validateDay, validateGeneralInfo, validateItinerary, ValidationError } from "@/lib/itinerary";
 
-export const maxDuration = 60;
+export const maxDuration = 90;
 
 async function readGeminiStream(response: Response) {
   if (!response.body) throw new Error("Gemini no devolvió un flujo de respuesta.");
@@ -101,9 +101,9 @@ ${correcting
           headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt + feedback }] }],
-            generationConfig: { temperature: 0.5, responseMimeType: "application/json" },
+            generationConfig: { temperature: 0.3, maxOutputTokens: 2500, responseMimeType: "application/json" },
           }),
-          signal: AbortSignal.timeout(60_000),
+          signal: AbortSignal.timeout(90_000),
         });
       } catch (networkError) {
         // A dropped connection is usually transient, so it uses the same bounded backoff.
