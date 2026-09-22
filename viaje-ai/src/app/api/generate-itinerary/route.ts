@@ -4,7 +4,9 @@ import { authOptions } from "@/auth";
 import { acquireGeminiSlot, MAX_DAILY_GENERATIONS, ensureUserDocument, getUserDailyQuota, incrementUserDailyGeneration } from "@/lib/firebaseAdmin";
 import { dayBounds, isRecord, parseSettings, tripDates, validateDay, validateGeneralInfo, validateItinerary, ValidationError } from "@/lib/itinerary";
 
-export const maxDuration = 90;
+// Vercel Hobby plan caps serverless functions at 60s regardless of a higher value here.
+export const maxDuration = 60;
+export const dynamic = "force-dynamic";
 
 async function readGeminiStream(response: Response) {
   if (!response.body) throw new Error("Gemini no devolvió un flujo de respuesta.");
@@ -92,7 +94,7 @@ ${correcting
   : '{"landmark":{"name":"nombre propio del monumento","description":"arquitectura característica"},"generalInfo":{"publicTransport":"...","taxiApps":"...","restaurants":[{"name":"...","description":"..."}],"dishes":[{"name":"...","description":"..."}],"currency":"...","euroConversion":"..."},"itinerary":[{"date":"YYYY-MM-DD","title":"...","mood":"...","stops":[{"time":"HH:mm","endTime":"HH:mm","activity":"...","place":"...","address":"...","transportType":"...","station":"...","estimatedCost":"..."}]}]}'}`;
 
     let feedback = "";
-    const maxRetries = 3;
+    const maxRetries = 1;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       let response: Response;
       try {
@@ -103,7 +105,7 @@ ${correcting
             contents: [{ parts: [{ text: prompt + feedback }] }],
             generationConfig: { temperature: 0.3, maxOutputTokens: 2500, responseMimeType: "application/json" },
           }),
-          signal: AbortSignal.timeout(90_000),
+          signal: AbortSignal.timeout(45_000),
         });
       } catch (networkError) {
         // A dropped connection is usually transient, so it uses the same bounded backoff.
@@ -117,7 +119,7 @@ ${correcting
           return NextResponse.json({ error: "El servicio de IA ha alcanzado su cuota compartida. No se ha iniciado ningún reintento; vuelve a intentarlo más tarde." }, { status: 429, headers: { "Retry-After": retryAfter } });
         }
         if ([500, 503].includes(response.status) && attempt < maxRetries) {
-          await new Promise((resolve) => setTimeout(resolve, 2_000 * 2 ** attempt));
+          await new Promise((resolve) => setTimeout(resolve, 1_000));
           continue;
         }
         console.error("Gemini API error", response.status, JSON.stringify(result).slice(0, 500));
