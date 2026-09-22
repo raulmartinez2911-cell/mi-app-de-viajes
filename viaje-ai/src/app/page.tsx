@@ -200,7 +200,15 @@ function TravelStudio({ userName }: { userName: string }) {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(snapshot),
       });
       if (!mounted.current) return;
-      const trip: CurrentTrip = { settings: snapshot, itinerary: validateItinerary(data.itinerary, snapshot), landmark: data.landmark, generalInfo: validateGeneralInfo(data.generalInfo), imageUrl: "", sourceImageUrl: safeImageUrl(catalogEntry(snapshot)?.imageUrl || "") };
+      // The itinerary is the critical path; a failed general-info call must never discard it.
+      let generalInfo: GeneralInfo | null = null;
+      try {
+        const infoData = await jsonRequest("/api/generate-general-info", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ city: snapshot.city, country: snapshot.country }),
+        });
+        generalInfo = validateGeneralInfo(infoData.generalInfo);
+      } catch { /* Ver el itinerario no debe depender de la información general del destino. */ }
+      const trip: CurrentTrip = { settings: snapshot, itinerary: validateItinerary(data.itinerary, snapshot), landmark: data.landmark, generalInfo, imageUrl: "", sourceImageUrl: safeImageUrl(catalogEntry(snapshot)?.imageUrl || "") };
       setCurrent(trip);
       setDayIndex(0); setAdjustment(""); setNotice("");
       setRemaining(data.remaining ?? null);

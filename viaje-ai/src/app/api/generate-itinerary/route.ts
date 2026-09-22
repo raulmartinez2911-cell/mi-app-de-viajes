@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/auth";
 import { acquireGeminiSlot, MAX_DAILY_GENERATIONS, ensureUserDocument, getUserDailyQuota, incrementUserDailyGeneration } from "@/lib/firebaseAdmin";
-import { dayBounds, isRecord, parseSettings, tripDates, validateDay, validateGeneralInfo, validateItinerary, ValidationError } from "@/lib/itinerary";
+import { dayBounds, isRecord, parseSettings, tripDates, validateDay, validateItinerary, ValidationError } from "@/lib/itinerary";
 
 // Vercel Hobby plan caps serverless functions at 60s regardless of a higher value here.
 export const maxDuration = 60;
@@ -75,7 +75,7 @@ export async function POST(request: Request) {
   VENTANAS HORARIAS OBLIGATORIAS: ${JSON.stringify(windows)}
 ${correcting
   ? `Corrige EXCLUSIVAMENTE el día de índice ${dayIndex}. Día actual: ${JSON.stringify(body.currentDay)}. Petición: ${JSON.stringify(body.adjustment)}. No generes ni devuelvas otros días.`
-  : `Genera exactamente ${dates.length} días, uno por cada fecha indicada. Elige también UN edificio monumental real y famoso de ${settings.destination}, con su nombre propio y descripción arquitectónica reconocible, para ilustrarlo con IA. Genera además información general breve y práctica del destino.`}
+  : `Genera exactamente ${dates.length} días, uno por cada fecha indicada. Elige también UN edificio monumental real y famoso de ${settings.destination}, con su nombre propio y descripción arquitectónica reconocible, para ilustrarlo con IA.`}
 REGLAS:
 - Cada actividad, visita guiada, comida, paseo y traslado tiene time y endTime HH:mm de 24 horas y debe comenzar Y TERMINAR dentro de la ventana de su fecha.
 - Nunca programes antes de la llegada ni después de la salida. No traslades actividades a fechas ajenas al viaje ni al día siguiente.
@@ -87,11 +87,10 @@ REGLAS:
 - Agrupa lugares cercanos, con nombre concreto y dirección; usa el hotel como base.
 - ${settings.includePublicTransport ? "Incluye desplazamientos en transporte público cuando sean adecuados. En cada traslado interurbano o en tren/bus indica estación y coste aproximado del billete." : "Planifica los desplazamientos a pie por defecto. No inventes transporte público salvo que sea imprescindible."}
 - Cuando un stop sea un desplazamiento, indica transportType como "A pie" por defecto o el medio público elegido; para trenes, buses o cambios de ciudad añade siempre station y estimatedCost aproximado.
-- La información general debe incluir tipo y precio aproximado del transporte público, disponibilidad de Uber/Bolt u otras apps de taxi, 4-5 restaurantes típicos (preferiblemente coincidentes con paradas), 4-5 platos típicos con descripción, moneda local y conversión aproximada a euros indicando que puede variar.
 FORMATO JSON ÚNICO:
 ${correcting
   ? '{"day":{"date":"YYYY-MM-DD","title":"...","mood":"...","stops":[{"time":"HH:mm","endTime":"HH:mm","activity":"...","place":"...","address":"..."}]}}'
-  : '{"landmark":{"name":"nombre propio del monumento","description":"arquitectura característica"},"generalInfo":{"publicTransport":"...","taxiApps":"...","restaurants":[{"name":"...","description":"..."}],"dishes":[{"name":"...","description":"..."}],"currency":"...","euroConversion":"..."},"itinerary":[{"date":"YYYY-MM-DD","title":"...","mood":"...","stops":[{"time":"HH:mm","endTime":"HH:mm","activity":"...","place":"...","address":"...","transportType":"...","station":"...","estimatedCost":"..."}]}]}'}`;
+  : '{"landmark":{"name":"nombre propio del monumento","description":"arquitectura característica"},"itinerary":[{"date":"YYYY-MM-DD","title":"...","mood":"...","stops":[{"time":"HH:mm","endTime":"HH:mm","activity":"...","place":"...","address":"...","transportType":"...","station":"...","estimatedCost":"..."}]}]}'}`;
 
     let feedback = "";
     const maxRetries = 1;
@@ -103,7 +102,7 @@ ${correcting
           headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt + feedback }] }],
-            generationConfig: { temperature: 0.3, maxOutputTokens: 2500, responseMimeType: "application/json" },
+            generationConfig: { temperature: 0.2, maxOutputTokens: 2500, responseMimeType: "application/json" },
           }),
           signal: AbortSignal.timeout(45_000),
         });
@@ -134,7 +133,7 @@ ${correcting
         if (!isRecord(parsed)) throw new ValidationError("Respuesta vacía.");
         const output = correcting
           ? { dayIndex, day: validateDay(parsed.day, settings, dayIndex) }
-          : { itinerary: validateItinerary(parsed.itinerary, settings), landmark: parsed.landmark, generalInfo: validateGeneralInfo(parsed.generalInfo) };
+          : { itinerary: validateItinerary(parsed.itinerary, settings), landmark: parsed.landmark };
         if (!correcting && (!isRecord(parsed.landmark) || typeof parsed.landmark.name !== "string" || !parsed.landmark.name.trim() || typeof parsed.landmark.description !== "string")) {
           throw new ValidationError("Falta el monumento representativo del destino.");
         }
