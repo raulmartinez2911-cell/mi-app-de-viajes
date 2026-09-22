@@ -71,7 +71,7 @@ function PlaneSpinner() {
 }
 function Landing({ authenticated, loading, onContinue }: { authenticated: boolean; loading?: boolean; onContinue: () => void }) {
   return <section className="intro landing-screen" id="top">
-    <div className="landing-content">
+    <div className="landing-content w-full max-w-4xl mx-auto bg-white rounded-3xl p-8 shadow-sm">
       <div className="landing-brand-media"><Image className="landing-map" src="/mapa-mundi.png" alt="Mapa mundial ilustrado" width={900} height={900} priority /><Image className="landing-logo" src="/Rumbo.png" alt="Rumbo" width={1200} height={183} priority /></div>
       <div className="eyebrow"><span /> Planificador inteligente de viajes</div>
       <h1>Tu próxima ruta,<br /><em>bien trazada.</em></h1>
@@ -329,7 +329,7 @@ function TravelStudio({ userName }: { userName: string }) {
       <span className="section-kicker">{screen === "planner" ? "01 / El punto de partida" : screen === "itinerary" ? "02 / Tu itinerario" : "Tu colección"}</span>
     </div>}
     {screen === "planner" && <section className="planner-screen">
-      <form className="planner-card" onSubmit={createItinerary}>
+      <form className="planner-card w-full max-w-4xl mx-auto bg-white rounded-3xl p-8 shadow-sm" onSubmit={createItinerary}>
         <div className="card-heading"><div><span className="section-kicker">El punto de partida</span><h2 ref={heading} tabIndex={-1}>Diseña tu viaje</h2></div><span className="sparkle">✦</span></div>
         <fieldset disabled={locked} className="planner-fields">
           <div className="field-row">
@@ -400,7 +400,7 @@ function TravelStudio({ userName }: { userName: string }) {
       <div className="gemini-note"><span>✦</span><div><strong>Una nota de tu copiloto</strong><p>Los horarios están limitados a tu estancia. Confirma aperturas y disponibilidad de las visitas guiadas antes de reservar.</p></div></div>
     </section>}
     {screen === "trips" && <section className="library-screen">
-      <div className="view-card">
+      <div className="view-card w-full max-w-4xl mx-auto bg-white rounded-3xl p-8 shadow-sm">
       <div className="saved-heading"><div><span className="section-kicker">Guardados en tu cuenta</span><h2 ref={heading} tabIndex={-1}>Mis viajes</h2></div><button className="saved-open-button" disabled={locked} onClick={() => navigate("planner")}>Planificar un viaje ↗</button></div>
       <div className="trip-tabs" role="tablist"><button className={tripSection === "pending" ? "active" : ""} onClick={() => setTripSection("pending")} role="tab" aria-selected={tripSection === "pending"}>Pendientes ({savedTrips.filter((trip) => !trip.completed).length})</button><button className={tripSection === "completed" ? "active" : ""} onClick={() => setTripSection("completed")} role="tab" aria-selected={tripSection === "completed"}>Realizados ({savedTrips.filter((trip) => trip.completed).length})</button></div>
       <p className="library-copy">Tus viajes permanecen aquí aunque cierres sesión. Vuelve a entrar con la misma cuenta de Google para recuperarlos.</p>
