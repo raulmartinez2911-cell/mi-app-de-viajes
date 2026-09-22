@@ -400,6 +400,7 @@ function TravelStudio({ userName }: { userName: string }) {
       <div className="gemini-note"><span>✦</span><div><strong>Una nota de tu copiloto</strong><p>Los horarios están limitados a tu estancia. Confirma aperturas y disponibilidad de las visitas guiadas antes de reservar.</p></div></div>
     </section>}
     {screen === "trips" && <section className="library-screen">
+      <div className="view-card">
       <div className="saved-heading"><div><span className="section-kicker">Guardados en tu cuenta</span><h2 ref={heading} tabIndex={-1}>Mis viajes</h2></div><button className="saved-open-button" disabled={locked} onClick={() => navigate("planner")}>Planificar un viaje ↗</button></div>
       <div className="trip-tabs" role="tablist"><button className={tripSection === "pending" ? "active" : ""} onClick={() => setTripSection("pending")} role="tab" aria-selected={tripSection === "pending"}>Pendientes ({savedTrips.filter((trip) => !trip.completed).length})</button><button className={tripSection === "completed" ? "active" : ""} onClick={() => setTripSection("completed")} role="tab" aria-selected={tripSection === "completed"}>Realizados ({savedTrips.filter((trip) => trip.completed).length})</button></div>
       <p className="library-copy">Tus viajes permanecen aquí aunque cierres sesión. Vuelve a entrar con la misma cuenta de Google para recuperarlos.</p>
@@ -415,6 +416,7 @@ function TravelStudio({ userName }: { userName: string }) {
           <div className="trip-card-body"><small>{trip.subtitle}</small><h3>{trip.title}</h3><p>{trip.destination}</p>{!trip.trip && <p>Versión antigua: faltan fechas u horarios completos.</p>}<div className="trip-card-actions"><button onClick={() => openTrip(trip)} disabled={Boolean(deletingId)}>{trip.trip ? "Ver viaje ↗" : "Completar datos ↗"}</button><label className="status-check"><input type="checkbox" checked={trip.completed} onChange={(event) => void setTripCompleted(trip, event.target.checked)} /> Realizado</label>{deleteCandidate === trip.id ? <><button className="delete-button" disabled={Boolean(deletingId)} onClick={() => void deleteTrip(trip.id)}>{deletingId === trip.id ? "Borrando..." : "Confirmar borrado"}</button><button disabled={Boolean(deletingId)} onClick={() => setDeleteCandidate("")}>Cancelar</button></> : <button className="delete-button" disabled={Boolean(deletingId)} onClick={() => setDeleteCandidate(trip.id)} aria-label={`Borrar viaje a ${trip.title}`}>Borrar</button>}</div></div>
         </article>;
       })}</div>
+      </div>
     </section>}
     <Footer />
   </main>;
