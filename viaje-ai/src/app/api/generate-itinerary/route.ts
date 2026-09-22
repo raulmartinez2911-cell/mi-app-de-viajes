@@ -88,13 +88,14 @@ REGLAS:
 - ${settings.includePublicTransport ? "Incluye desplazamientos en transporte público cuando sean adecuados. En cada traslado interurbano o en tren/bus indica estación y coste aproximado del billete." : "Planifica los desplazamientos a pie por defecto. No inventes transporte público salvo que sea imprescindible."}
 - Cuando un stop sea un desplazamiento, indica transportType como "A pie" por defecto o el medio público elegido; para trenes, buses o cambios de ciudad añade siempre station y estimatedCost aproximado.
 - Si en las notas del usuario se pide visitar una ciudad o lugar externo (por ejemplo Cuzco o Machu Picchu partiendo de Lima), integra esa excursión dentro de la secuencia diaria de fechas indicada, sin añadir, quitar ni reordenar fechas: usa uno o varios de los días ya listados para esa excursión.
+- Usa frases breves y directas en activity, title, mood, place y address (máximo ~12 palabras cada una); no repitas información ni escribas explicaciones largas, para evitar que la respuesta se corte.
 FORMATO JSON ÚNICO:
 ${correcting
   ? '{"day":{"date":"YYYY-MM-DD","title":"...","mood":"...","stops":[{"time":"HH:mm","endTime":"HH:mm","activity":"...","place":"...","address":"..."}]}}'
   : '{"landmark":{"name":"nombre propio del monumento","description":"arquitectura característica"},"itinerary":[{"date":"YYYY-MM-DD","title":"...","mood":"...","stops":[{"time":"HH:mm","endTime":"HH:mm","activity":"...","place":"...","address":"...","transportType":"...","station":"...","estimatedCost":"..."}]}]}'}`;
 
     let feedback = "";
-    const maxRetries = 1;
+    const maxRetries = 2;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       let response: Response;
       try {
@@ -103,9 +104,9 @@ ${correcting
           headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt + feedback }] }],
-            generationConfig: { temperature: 0.2, maxOutputTokens: 2500, responseMimeType: "application/json" },
+            generationConfig: { temperature: 0.2, maxOutputTokens: 4096, responseMimeType: "application/json" },
           }),
-          signal: AbortSignal.timeout(45_000),
+          signal: AbortSignal.timeout(18_000),
         });
       } catch (networkError) {
         // A dropped connection is usually transient, so it uses the same bounded backoff.
@@ -119,7 +120,7 @@ ${correcting
           return NextResponse.json({ error: "El servicio de IA ha alcanzado su cuota compartida. No se ha iniciado ningún reintento; vuelve a intentarlo más tarde." }, { status: 429, headers: { "Retry-After": retryAfter } });
         }
         if ([500, 503].includes(response.status) && attempt < maxRetries) {
-          await new Promise((resolve) => setTimeout(resolve, 1_000));
+          await new Promise((resolve) => setTimeout(resolve, 500));
           continue;
         }
         console.error("Gemini API error", response.status, JSON.stringify(result).slice(0, 500));
