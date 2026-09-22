@@ -53,7 +53,9 @@ rejects(() => replaceDay(original, day("2026-10-13", "12:00", "19:30"), window, 
 
 // 5. validateItinerary requires exactly the trip dates
 check(validateItinerary(original, window).length === 3, "itinerario completo válido");
-rejects(() => validateItinerary(original.slice(0, 2), window), "itinerario con días de menos se rechaza");
+const partial = validateItinerary(original.slice(0, 2), window);
+check(partial.length === 3 && partial[2].date === "2026-10-14" && partial[2].stops.length === 0, "itinerario con días de menos se autorrellena en vez de rechazarse");
+rejects(() => validateItinerary("no es una lista", window), "itinerario que no es un array se rechaza");
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
