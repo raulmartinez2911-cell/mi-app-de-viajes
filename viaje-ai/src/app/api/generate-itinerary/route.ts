@@ -8,15 +8,23 @@ import { dayBounds, isRecord, parseSettings, tripDates, validateDay, validateIti
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
-async function readGeminiStream(response: Response) {
+async function readGeminiStream(response: Response, controller: AbortController, idleMs: number) {
   if (!response.body) throw new Error("Gemini no devolvió un flujo de respuesta.");
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let text = "";
+  // Only abort when Gemini stops sending new chunks; a slow-but-progressing generation is left alone.
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  const resetIdleTimer = () => {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => controller.abort(), idleMs);
+  };
+  resetIdleTimer();
   try {
     while (true) {
       const chunk = await reader.read();
+      resetIdleTimer();
       buffer += decoder.decode(chunk.value || new Uint8Array(), { stream: !chunk.done });
       const lines = buffer.split("\n");
       buffer = lines.pop() || "";
@@ -30,6 +38,7 @@ async function readGeminiStream(response: Response) {
       if (chunk.done) break;
     }
   } finally {
+    if (idleTimer) clearTimeout(idleTimer);
     reader.releaseLock();
   }
   return text;
@@ -96,7 +105,13 @@ ${correcting
 
     let feedback = "";
     const maxRetries = 2;
+    // Vercel kills the function at 60s no matter what; keep an 8s safety margin for the surrounding logic.
+    const hardDeadlineAt = Date.now() + 52_000;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const remainingMs = hardDeadlineAt - Date.now();
+      if (remainingMs < 4_000) break;
+      const controller = new AbortController();
+      const hardTimer = setTimeout(() => controller.abort(), remainingMs);
       let response: Response;
       try {
         response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`, {
@@ -106,14 +121,17 @@ ${correcting
             contents: [{ parts: [{ text: prompt + feedback }] }],
             generationConfig: { temperature: 0.2, maxOutputTokens: 4096, responseMimeType: "application/json" },
           }),
-          signal: AbortSignal.timeout(18_000),
+          signal: controller.signal,
         });
       } catch (networkError) {
-        // A dropped connection is usually transient, so it uses the same bounded backoff.
+        // Only retry if there is still enough budget left; otherwise it would just abort again immediately.
+        if (attempt < maxRetries && hardDeadlineAt - Date.now() > 4_000) continue;
+        clearTimeout(hardTimer);
         console.error("Gemini request failed", networkError instanceof Error ? networkError.message : networkError);
         return NextResponse.json({ error: "Gemini ha tardado demasiado en responder. No se ha consumido cuota; inténtalo de nuevo en unos segundos." }, { status: 503 });
       }
       if (!response.ok) {
+        clearTimeout(hardTimer);
         const result = await response.json().catch(() => ({}));
         if (response.status === 429) {
           const retryAfter = response.headers.get("retry-after") || "60";
@@ -130,7 +148,8 @@ ${correcting
         return NextResponse.json({ error: `Gemini no pudo generar la ruta (${response.status}). ${hint}${detail ? ` Detalle: ${detail}` : ""}` }, { status: 502 });
       }
       try {
-        const text = await readGeminiStream(response);
+        const text = await readGeminiStream(response, controller, 20_000);
+        clearTimeout(hardTimer);
         const parsed: unknown = JSON.parse(text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim());
         if (!isRecord(parsed)) throw new ValidationError("Respuesta vacía.");
         const output = correcting
@@ -143,6 +162,7 @@ ${correcting
         // Saving is explicit: the heart button stores the full settings and route.
         return NextResponse.json({ ...output, remaining: Math.max(0, quota.remaining - 1) });
       } catch (error) {
+        clearTimeout(hardTimer);
         if (!(error instanceof ValidationError || error instanceof SyntaxError)) throw error;
         feedback = `\nLa respuesta anterior no superó la validación: ${error.message}. Corrige el JSON respetando las ventanas, sin cambiar otros días.`;
       }
