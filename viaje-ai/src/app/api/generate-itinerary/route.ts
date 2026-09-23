@@ -112,6 +112,8 @@ ${correcting
       if (remainingMs < 4_000) break;
       const controller = new AbortController();
       const hardTimer = setTimeout(() => controller.abort(), remainingMs);
+      // A hung connection must not eat the whole shared budget: cap the wait for the first byte so a retry still has time left.
+      const connectTimer = setTimeout(() => controller.abort(), Math.min(remainingMs, 15_000));
       let response: Response;
       try {
         response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`, {
@@ -123,7 +125,9 @@ ${correcting
           }),
           signal: controller.signal,
         });
+        clearTimeout(connectTimer);
       } catch (networkError) {
+        clearTimeout(connectTimer);
         // Only retry if there is still enough budget left; otherwise it would just abort again immediately.
         if (attempt < maxRetries && hardDeadlineAt - Date.now() > 4_000) continue;
         clearTimeout(hardTimer);
